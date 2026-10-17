@@ -12,8 +12,10 @@ filter in the loop) + IKController (move_l on the official model). The lever tip
 is read from the scene (site ``dispenser_lever_tip``) and converted into the robot base
 frame used by the IK (origin on the floor under the official model's torso).
 
-Sequence: start at home (forearms forward) -> move above the tip (gripper closed) ->
-press down -> hold -> lift (spring returns the lever) -> back home.
+Sequence: start at home (forearms forward) -> approach waypoint (high, robot side) -> above the
+tip (gripper closed) -> press down until the lever engages -> lift until the spring has
+returned it -> back home. Moves are timed from distance and --speed and only wait until the
+arm has actually arrived; there are no fixed holds.
 
 The sim starts directly at home: with the table just under the elbows, swinging the
 forearms up from the hanging rest pose would go through the tabletop.
@@ -45,6 +47,9 @@ LEVER_DISPENSING_RAD = 0.15
 ABOVE_M = 0.05  # approach height above the lever tip
 PRESS_M = 0.025  # how far below the resting tip the TCP is commanded (the lever stops it at ~1.4 cm)
 TIP_BACK_M = 0.01  # TCP slightly towards the jug from the tip, so the fingertips land on the lever
+MIN_MOVE_S = 0.3  # shortest move_l, even for tiny distances
+APPROACH_BACK_M, APPROACH_UP_M = 0.06, 0.03  # waypoint before "above": behind and over the lever
+ARRIVE_TOL_M = 0.012  # measured TCP within this of the target = arrived (steady-state offset is ~8 mm)
 
 
 def lever_contacts(m: mujoco.MjModel, d: mujoco.MjData) -> list:
@@ -80,6 +85,7 @@ def main() -> int:
     parser.add_argument("--side", choices=SIDES, default="left")
     parser.add_argument("--render", action="store_true", help="MuJoCo viewer (real time)")
     parser.add_argument("--snapshots", type=Path, help="directory for one PNG per phase")
+    parser.add_argument("--speed", type=float, default=0.25, help="average TCP speed per move (m/s)")
     parser.add_argument("--rebuild", action="store_true", help="regenerate the sandbox scene first")
     parser.add_argument("--config", default="configs/task_config.yaml")
     args = parser.parse_args()
@@ -106,43 +112,72 @@ def main() -> int:
     lever_adr = m.jnt_qposadr[m.joint("dispenser_lever").id]
     side = args.side
 
+    lever = lambda: float(d.qpos[lever_adr])  # noqa: E731
+
+    def wait_until(cond, timeout: float) -> float:
+        """Steps until ``cond()`` holds (or the timeout); returns the time waited."""
+        t = 0.0
+        while not cond() and t < timeout:
+            robot.advance(0.02)
+            t += 0.02
+        return t
+
+    def move(p: np.ndarray, R: np.ndarray, arrive: bool = True, **kw) -> dict:
+        """move_l timed from the distance and --speed, then wait only until the arm has caught up.
+
+        The safety filter caps joint speed, so a fast command can finish before the arm does;
+        waiting on the measured TCP (not a fixed time) is what makes the next step valid.
+        """
+        dist = float(np.linalg.norm(p - ik.pose_cmd[side][0]))
+        err = ik.move_l({side: (p, R)}, duration=max(MIN_MOVE_S, dist / args.speed), **kw)
+        if arrive:
+            wait_until(lambda: np.linalg.norm(ik.get_tcp_pose()[side][0] - p) < ARRIVE_TOL_M, timeout=1.5)
+        return err
+
     robot.start()
     snap = Snapshots(robot, args.snapshots)
+    t_start = d.time
     try:
-        robot.advance(0.5)
         ik.reset()
         # Scene world -> IK base frame: the sandbox lifts the official robot root (no rotation).
         base = d.body("openarm_body_link0").xpos.copy()
         tip = d.site("dispenser_lever_tip").xpos.copy() - base
         p_home, R_home = ik.get_tcp_pose()[side]
         print(f"{side} TCP at home (base frame): {np.round(p_home, 3)}")
-        print(f"lever tip (base frame):          {np.round(tip, 3)}   lever {d.qpos[lever_adr]:+.3f} rad")
+        print(f"lever tip (base frame):          {np.round(tip, 3)}   lever {lever():+.3f} rad")
         snap("0_home")
 
         target = tip + np.array([TIP_BACK_M, 0.0, 0.0])
         above = target + np.array([0.0, 0.0, ABOVE_M])
         press = target - np.array([0.0, 0.0, PRESS_M])
-        err = ik.move_l({side: (above, R_home)}, duration=3.0, gripper_m={side: 0.0})
+        approach = above + np.array([-APPROACH_BACK_M, 0.0, APPROACH_UP_M])
+        # Come in high and from the robot's side, then drop onto the tip: a direct line from home
+        # passes close to the spigot, and at speed the arm's real path bows into it.
+        move(approach, R_home, gripper_m={side: 0.0})
+        err = move(above, R_home)
         reached = ik.get_tcp_pose()[side][0]
         print(f"above the tip: IK error {err[side] * 1e3:.1f} mm, measured TCP error {np.linalg.norm(reached - above) * 1e3:.1f} mm")
         snap("1_above")
 
-        ik.move_l({side: (press, R_home)}, duration=2.0)
-        robot.advance(0.5)
-        pressed = float(d.qpos[lever_adr])
+        move(press, R_home, arrive=False)  # the lever stops the fingers above this target
+        waited = wait_until(lambda: lever() > LEVER_DISPENSING_RAD, timeout=1.0)
+        pressed = lever()
         reached = ik.get_tcp_pose()[side][0]
-        print(f"pressed: lever {pressed:+.3f} rad ({np.degrees(pressed):.1f} deg), TCP z {reached[2]:.3f} (tip was {tip[2]:.3f})")
+        print(f"pressed: lever {pressed:+.3f} rad ({np.degrees(pressed):.1f} deg) after {waited:.2f} s extra, "
+              f"TCP z {reached[2]:.3f} (tip was {tip[2]:.3f})")
         print(f"         touching the lever: {lever_contacts(m, d)}")
         snap("2_pressed")
 
-        ik.move_l({side: (above, R_home)}, duration=1.5)
-        robot.advance(1.0)
-        released = float(d.qpos[lever_adr])
-        print(f"released: lever {released:+.3f} rad")
+        move(above, R_home)
+        waited = wait_until(lambda: lever() < 0.03, timeout=1.0)
+        released = lever()
+        print(f"released: lever {released:+.3f} rad after {waited:.2f} s extra")
         snap("3_released")
 
-        ik.move_l({side: (p_home, R_home)}, duration=3.0)
+        move(approach, R_home, arrive=False)
+        move(p_home, R_home)
         snap("4_home")
+        print(f"sequence took {d.time - t_start:.1f} s (sim time)")
         ok = pressed > LEVER_DISPENSING_RAD and released < 0.03
         print("RESULT:", "lever pressed and released" if ok else "lever NOT actuated as expected")
         return 0 if ok else 1
