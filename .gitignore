@@ -38,3 +38,6 @@ outputs/
 # Leftover openarm_mujoco checkout from feat/scripted_pick_and_place; the code uses
 # the git-ignored third_party/openarm/openarm_mujoco instead.
 third_party/openarm_mujoco/
+
+# Downloaded model checkpoints (GroundingDINO / SAM2), not source.
+weights/

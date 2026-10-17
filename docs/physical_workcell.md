@@ -80,3 +80,9 @@ Select `physical_hbv_rgb_camera` in the MuJoCo viewer to inspect the fixed RGB
 camera viewpoint. Its $70^\circ$ vertical field of view is a temporary visual
 approximation: the documented HBV camera has no calibrated intrinsics, so it
 must be replaced after a checkerboard/Charuco calibration.
+
+The camera mount pose above is likewise nominal. Both it and the FOV are
+replaced by a measured calibration: see [camera_calibration.md](camera_calibration.md)
+(`scripts/calibrate_intrinsics.py`, then `scripts/calibrate_table_tape.py`),
+which writes `configs/camera_extrinsics.yaml` with the MuJoCo `pos`/`quat`/`fovy`
+and a pixel-to-tabletop mapping in the base frame.

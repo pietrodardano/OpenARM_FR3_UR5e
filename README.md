@@ -51,12 +51,18 @@ RoboTokens/
 │       └── mujoco_env.py
 ├── scripts/
 │   ├── run_pipeline.py         # Main execution entrypoint (vision -> OMPL -> MuJoCo)
-│   └── calibrate_camera.py     # Operator zero-calibration tool
+│   ├── calibrate_camera.py     # Operator zero-calibration tool
+│   ├── calibrate_intrinsics.py # Lens intrinsics from ChArUco board photos
+│   ├── charuco_for_screen.py   # ChArUco board sized to a tablet screen (exact mm from PPI)
+│   ├── capture_frames.py       # Shoot calibration photos w/ live detection + coverage feedback
+│   ├── calibrate_camera_touch.py # Camera pose from robot-touched points (most reliable)
+│   └── calibrate_table_tape.py # Camera pose from a tape rectangle (no robot motion)
 ├── tests/
 │   ├── __init__.py
 │   └── test_pipeline.py        # Comprehensive unit & integration tests
 └── docs/
     ├── architecture.md         # Detailed mathematical derivations & system diagram
+    ├── camera_calibration.md   # Intrinsics + tape-rectangle extrinsics workflow
     └── hackathon_roadmap.md    # 30-hour sprint roadmap & pitch notes
 ```
 
@@ -106,6 +112,24 @@ uv run python -m unittest discover -s tests -v
 Hold your hands in the neutral resting pose in front of the camera to zero out reference offsets:
 ```bash
 python3 scripts/calibrate_camera.py
+```
+
+### Calibrate the Table Camera
+Two halves — the lens, then the pose (see [docs/camera_calibration.md](docs/camera_calibration.md)).
+The lens needs a ChArUco board; its physical size does not affect the intrinsics,
+so a tablet screen works as well as A4:
+```bash
+../.venv/bin/python scripts/charuco_for_screen.py --screen 2360x1640 --ppi 264
+../.venv/bin/python scripts/calibrate_intrinsics.py --images outputs/intrinsics_photos --square-size 19.242 --marker-size 13.758
+```
+Then the pose. Touching points with the gripper is the most reliable, because no
+tape measure enters the chain (the script never commands motion — you move the arm):
+```bash
+../.venv/bin/python scripts/calibrate_camera_touch.py --side right --session outputs/touch_session
+```
+Or, without moving the robot, from a measured tape rectangle on the table:
+```bash
+../.venv/bin/python scripts/calibrate_table_tape.py --side 500 --depth 400 --near-edge-from-table-rear 150
 ```
 
 ### Launch the Full Pipeline (Vision -> RBS / OMPL -> MuJoCo)
