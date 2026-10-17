@@ -85,7 +85,12 @@ finally:
 
 ## Bring-up checklist (robot PC)
 
-1. **Rootful Docker + NVIDIA runtime.** Rootless Docker's `network_mode: host` is not the real host network, so `can0`/`can1` would be invisible (`docker/dev.sh` warns about this).
+Any Linux machine works, including a laptop without a GPU: control, IK and the
+MuJoCo dry runs are CPU-only. A GPU only matters later for policy inference.
+
+1. **Rootful Docker.** Rootless Docker's `network_mode: host` is not the real host network, so `can0`/`can1` would be invisible (`docker/dev.sh` warns about this).
+   - On a fresh Ubuntu: `sudo apt install docker.io docker-compose-v2 git`, then `sudo usermod -aG docker $USER` and log out and back in.
+   - The NVIDIA runtime is optional: `docker/dev.sh` adds `compose.gpu.yaml` only when it is installed, and `ROBOTOKENS_GPU=0` forces CPU-only.
 2. **Official sources:** clone them into `third_party/openarm/` as described in [openarm_v1_environment.md](openarm_v1_environment.md). Validated against `openarm_can` 1.4.0 (`f340d4b`), `openarm_description` `206eb8a` and `openarm_mujoco` `36d4a44`.
 3. **Build and enter the container:** `docker/dev.sh build`, then `docker/dev.sh shell`. The image builds the `openarm_can` Python binding pinned to 1.4.0 and installs `openarm-can-cli` from the Enactic PPA.
 4. **CAN up:** `scripts/setup_can.sh` (CAN-FD 1M/5M on `can0` and `can1`). Check with `openarm-can-cli -i can0 discover`.

@@ -1,4 +1,6 @@
-# Used by both docker/dev.sh and .devcontainer/devcontainer.json.
+# Used by docker/dev.sh. GPU settings live in compose.gpu.yaml, which dev.sh adds
+# only when the NVIDIA container runtime is installed, so the same setup runs on
+# a laptop without a GPU (robot control is CPU-only).
 #
 # Hardware access notes:
 #   - SocketCAN interfaces live in the host network namespace, hence
@@ -32,9 +34,6 @@ services:
       - SYS_NICE
     environment:
       DISPLAY: ${DISPLAY:-}
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: all
-    runtime: nvidia
     ipc: host
     network_mode: host
     working_dir: /workspace

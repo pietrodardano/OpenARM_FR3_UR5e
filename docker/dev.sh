@@ -12,6 +12,12 @@ cd "$(dirname "$0")"
 ./detect_user.sh
 source .env
 compose=(docker compose -f compose.yaml)
+# GPU is optional: robot control runs on the CPU, the GPU only matters for policies.
+if [[ "${ROBOTOKENS_GPU:-auto}" != "0" ]] && docker info -f '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia; then
+  compose+=(-f compose.gpu.yaml)
+elif [[ "${1:-shell}" =~ ^(build|shell|run)$ ]]; then
+  echo "[dev.sh] NVIDIA runtime not found (or ROBOTOKENS_GPU=0): running CPU-only." >&2
+fi
 
 if [[ "${DOCKER_ROOTLESS}" == "1" && "${1:-shell}" =~ ^(shell|run)$ ]]; then
   echo "[dev.sh] WARNING: rootless Docker detected. The container will NOT see the host's" >&2
