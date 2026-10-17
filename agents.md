@@ -90,5 +90,6 @@
   - `src/vision/` only reads and parses perceptual streams; never calls physics or motors.
   - `src/planning/` operates on kinematics, state spaces, collision models, and trajectories.
   - `src/control/` handles arbitration, rate limiting, and state transitions.
-  - `src/simulation/` encapsulates the MuJoCo engine and RBS wrappers.
+  - `src/simulation/` encapsulates the MuJoCo engine and RBS wrappers (`openarm_sim.py`: official-model backend with the real driver's API).
+  - `src/hardware/` is the thin physical-device layer; only `openarm_bus.py` imports `openarm_can`. The real-robot control interface (`RobotBackend`, `JointPositionController`, `IKController`) is documented in `docs/real_robot_deployment.md`.
 - **Fail-Fast Configuration:** All tunable hyperparameters (camera extrinsics, PID gains, workspace limits) belong in `configs/task_config.yaml`, never hardcoded in scripts.

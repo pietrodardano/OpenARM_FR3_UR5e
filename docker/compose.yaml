@@ -1,0 +1,43 @@
+# Used by both docker/dev.sh and .devcontainer/devcontainer.json.
+#
+# Hardware access notes:
+#   - SocketCAN interfaces live in the host network namespace, hence
+#     network_mode: host. This only reaches the real host under *rootful*
+#     Docker; rootless Docker's "host" network is rootlesskit's namespace and
+#     can0/can1 are invisible there (docker/dev.sh warns about this).
+#   - /dev is bind-mounted with a cgroup rule for V4L2 (major 81) so the UVC
+#     camera can be unplugged/replugged without restarting the container.
+#   - NET_ADMIN lets scripts/setup_can.sh bring CAN links up from inside;
+#     SYS_NICE lets the control thread request SCHED_FIFO (best effort; set
+#     hardware.realtime_priority > 0 in configs/task_config.yaml).
+name: robotokens
+
+services:
+  dev:
+    image: robotokens-deploy:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+    volumes:
+      - ..:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /dev:/dev
+    device_cgroup_rules:
+      - "c 81:* rmw"
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+    environment:
+      DISPLAY: ${DISPLAY:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    runtime: nvidia
+    ipc: host
+    network_mode: host
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: sleep infinity
