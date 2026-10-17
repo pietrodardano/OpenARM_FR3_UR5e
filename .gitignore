@@ -23,3 +23,6 @@ htmlcov/
 *.swp
 *~
 .DS_Store
+
+# Locally cloned official OpenArm SDK, model, simulation, and CAD assets.
+third_party/openarm/

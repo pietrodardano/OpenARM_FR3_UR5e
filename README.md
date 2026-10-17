@@ -16,6 +16,8 @@ RoboTokens maps human egocentric vision and real-time 3D hand tracking from the 
 | Ecosystem Component | Upstream Repository / Reference | Role in Stack |
 |---|---|---|
 | **RobotBlockSet (RBS by JSI)** | [abr-ijs/robotblockset_python](https://github.com/abr-ijs/robotblockset_python) | Unified robot kinematics, spatial transforms, and `JointPathPlanner` |
+| **OpenArm Control** | [enactic/openarm](https://github.com/enactic/openarm) | `openarm_can` for low-level motor control, `openarm_description` for the robot model, and `openarm_mujoco` for simulation |
+| **OpenArm Docs & CAD** | [enactic/openarm](https://github.com/enactic/openarm) | Reference geometry, mechanical assets, and control-oriented design details for MuJoCo and RBS integration |
 | **OpenArms** | OpenArms Hardware Platform | Bimanual robot morphology, actuator interfaces, and physical hardware bridge |
 | **DaiDai Lab Ecosystem** | [wwnt.ai](https://wwnt.ai/) | Wearable egocentric camera feed, 3D hand landmark tracking, and gesture streaming |
 | **Egocentric Camera HW** | [HBV HD CAMERA Specs](docs/camera_specifications.md) | UVC HD webcam (0x0ac8:0x0346), 720p/1080p @ 30 FPS, plug-and-play |
@@ -70,28 +72,14 @@ cd RoboTokens
 ```
 
 ### Step 2: Environment Setup
-Using `uv` (recommended for ultra-fast setup) or standard `venv`:
+Use `uv` to create the locked development environment:
 
 ```bash
-# Using uv:
-uv venv
-source .venv/bin/activate
-
-# Or using standard python:
-python3 -m venv .venv
-source .venv/bin/activate
+uv venv --python 3.11
+uv sync --extra rbs --extra dev
 ```
 
-### Step 3: Install Dependencies
-```bash
-pip install -r requirements.txt
-pip install -e .
-
-# Install RobotBlockSet (RBS) from JSI:
-pip install git+https://github.com/abr-ijs/robotblockset_python.git
-```
-
-> **Note on Fallback Mode:** If native C++ OMPL or MuJoCo libraries are not yet compiled on your target host, RoboTokens provides an automated fallback mock backend so you can develop, test, and run the complete architecture immediately!
+For the official OpenArm v1 sources, the parallel-link MuJoCo scene, validation, rendering, and hardware boundary, follow [docs/openarm_v1_environment.md](docs/openarm_v1_environment.md).
 
 ---
 
@@ -100,7 +88,7 @@ pip install git+https://github.com/abr-ijs/robotblockset_python.git
 ### Run Unit Tests
 Verify all coordinate transforms, OMPL planners, and simulation environments:
 ```bash
-python3 -m unittest discover -s tests -v
+uv run python -m unittest discover -s tests -v
 ```
 
 ### Calibrate Egocentric Tracker

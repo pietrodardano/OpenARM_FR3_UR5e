@@ -24,6 +24,7 @@ dev = [
 ]
 rbs = [
     "robotblockset>=0.2.0",
+    "ompl>=2.0.0",
 ]
 
 [tool.pytest.ini_options]

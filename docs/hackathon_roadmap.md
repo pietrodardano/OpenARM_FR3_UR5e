@@ -28,3 +28,9 @@
 
 4. **The Impact (30s):**
    > "Low-cost hardware, zero heavy infrastructure, open-source robotics stack."
+
+## OpenArm Integration Notes
+
+- The OpenArm CAD and documentation repository is the mechanical source of truth for sim-to-real geometry.
+- The first hardware bridge should stay Python-native, using direct serial or vendor SDK calls where available.
+- ROS and ROS2 remain optional, not required, for the initial control and planning stack.

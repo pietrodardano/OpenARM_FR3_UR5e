@@ -60,7 +60,23 @@ $$\mathbf{M} = \begin{bmatrix} 0 & 0 & 1 \\ -1 & 0 & 0 \\ 0 & -1 & 0 \end{bmatri
 
 ---
 
-## 4. Safety & Fail-Safe Mechanisms
+## 4. OpenArm Source of Truth
+
+The OpenArm repository at [enactic/openarm](https://github.com/enactic/openarm) should be treated as the mechanical reference for link dimensions, assembly constraints, and CAD-driven geometry assumptions.
+
+For robot control, the upstream `openarm_can` package is the low-level hardware interface to target first. `openarm_description` supplies the robot model, and `openarm_mujoco` supplies the corresponding simulator assets.
+
+For this project, the practical integration path is:
+
+1. Convert the upstream geometry into MuJoCo-compatible bodies, joints, and collision meshes.
+2. Mirror the same kinematic chain in the RBS layer so FK, Jacobians, and planner state validity stay aligned with the simulator.
+3. Keep the control stack Python-first for the initial implementation, with optional C++ acceleration later if profiling shows a real bottleneck.
+4. Avoid ROS and ROS2 unless a future hardware interface explicitly requires them; the current architecture is designed to run without them.
+5. Treat direct robot I/O as a thin adapter beneath the planner/controller layers, not as part of the teleoperation logic.
+
+---
+
+## 5. Safety & Fail-Safe Mechanisms
 
 - **Cartesian Workspace Clipping:** Rigid boundary box $[0.15 \le x \le 0.55, -0.45 \le y \le 0.45, 0.38 \le z \le 0.75]$ meters preventing arm overextension or table strikes.
 - **Dual-Arm Proximity Barrier:** Enforces a minimum clearance distance $d_{min} = 8\text{ cm}$ between left and right end-effectors to prevent tool-center collisions.

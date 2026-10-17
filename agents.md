@@ -12,8 +12,12 @@
 | Component | Technology | Reference / Source |
 |---|---|---|
 | **Robotics Framework** | RobotBlockSet (`robotblockset_python` by JSI) | [abr-ijs/robotblockset_python](https://github.com/abr-ijs/robotblockset_python) |
+| **OpenArm Control SDK** | `openarm_can` | [enactic/openarm_can](https://github.com/enactic/openarm_can) — official C++ SocketCAN control library; its Python bindings are experimental |
+| **OpenArm Robot Model** | `openarm_description` | [enactic/openarm_description](https://github.com/enactic/openarm_description) — official URDF/xacro, joint metadata, and meshes |
+| **OpenArm Simulator Model** | `openarm_mujoco` | [enactic/openarm_mujoco](https://github.com/enactic/openarm_mujoco) — official MuJoCo XML models and collision assets |
+| **OpenArm CAD & BOM** | `openarm_hardware` | [enactic/openarm_hardware](https://github.com/enactic/openarm_hardware) — links to official STEP, BOM, and assembly sources |
 | **Simulation Backend** | MuJoCo (v3.0+) | [google-deepmind/mujoco](https://github.com/google-deepmind/mujoco) |
-| **Motion Planning** | OMPL (via RBS `JointPathPlanner`) | [OMPL Library](https://ompl.kavrakilab.org/) |
+| **Motion Planning** | OMPL (optional; RBS only after model compatibility is verified) | [OMPL Library](https://ompl.kavrakilab.org/) |
 | **Robot Hardware Setup** | OpenArms Bimanual Robotics | OpenArms Hardware Platform |
 | **Egocentric Vision** | DaiDai Lab Stream & Hand Tracking | [DaiDai Lab](https://wwnt.ai/) |
 | **Language & Tooling** | Python 3.10+, NumPy, SciPy, PyYAML, uv | Modern Python packaging |
@@ -32,10 +36,10 @@
 [ src.control.bimanual_controller ] ◄── Safety workspace limits & State machine
     │  (Cartesian End-Effector Setpoints: Left & Right)
     ▼
-[ src.planning.ompl_planner ] ◄── RBS JointPathPlanner / MuJoCo Collision World
-    │  (Collision-free bimanual C-space trajectory)
+[ src.planning.ompl_planner ] ◄── Optional OMPL path planning / MuJoCo Collision World
+   │  (Collision-free 14-DOF bimanual arm trajectory)
     ▼
-[ src.simulation.mujoco_env ] ──► [ OpenArms Physical Hardware Bridge ]
+[ src.simulation.mujoco_env ] ──► [ openarm_can Physical Hardware Bridge ]
        (Physics execution @ 500Hz)
 ```
 
@@ -59,13 +63,19 @@
 
 1. **Dual-Arm Independence & Collision Coupling:**
    - The left and right arms share a common workspace in front of the robot.
-   - OMPL state space must plan either over the combined 12-DOF joint space ($q_{left} \oplus q_{right}$) or sequentially with swept-volume collision avoidance.
-2. **Graceful Fallbacks (Hackathon Resilience Rule):**
-   - If native C++ OMPL or RBS system bindings fail to compile on a developer's host machine, modules MUST provide robust numerical/Jacobian fallback planners and local obstacle avoidance without crashing.
+   - OpenArm has 7 arm joints per side. OMPL state space must plan over the combined 14-DOF arm joint space ($q_{left} \oplus q_{right}$); grippers are separate actuators.
+2. **Official OpenArm SDK Rule:**
+   - Use only `openarm_can`, `openarm_description`, and `openarm_mujoco` for OpenArm IK and real-arm control; RBS is optional planning only.
+   - Use the v1 `parallel_link` model: `openarm_description/assets/end_effector/parallel_link/` and `openarm_mujoco/v1/openarm_bimanual.xml`.
+   - Get dimensions, limits, actuator IDs, and collision meshes from the official sources, never this repository's placeholder model.
+   - Prefer the supported C++ `openarm_can` API for hardware; the Python binding is experimental. Official local sources are under `third_party/openarm/` and Git-ignored.
+3. **Graceful Fallbacks (Hackathon Resilience Rule):**
+   - If native OMPL or RBS bindings fail to compile on a developer's host machine, modules MUST provide a safe mock/simulation-only planning fallback without crashing.
+   - A fallback MUST NOT replace the official OpenArm SDK for OpenArm IK, actuator control, or physical-hardware safety checks.
    - Mock streams (`MockHandTrackerStream`) must be provided for every hardware/vision component to allow offline testing without active sensors or physical robot arms.
-3. **Safety & Workspace Clipping:**
+4. **Safety & Workspace Clipping:**
    - Never send raw hand positions directly to joint motors without Cartesian workspace clamping, velocity saturation limits, and self-collision filtering.
-4. **Decoupled Frequencies:**
+5. **Decoupled Frequencies:**
    - Vision & hand-tracking input: ~30 Hz.
    - Motion planning & replanning: ~10–20 Hz (asynchronous or threshold-triggered).
    - Low-level control & physics simulation: 100–500 Hz.

@@ -9,6 +9,9 @@ mujoco>=3.0.0
 # pip install git+https://github.com/abr-ijs/robotblockset_python.git
 robotblockset>=0.2.0
 
+# Standalone Python bindings for OMPL motion planning
+ompl>=2.0.0
+
 # Testing & Dev
 pytest>=7.0.0
 pytest-cov>=4.0.0
