@@ -14,7 +14,7 @@
 | **Robotics Framework** | RobotBlockSet (`robotblockset_python` by JSI) | [abr-ijs/robotblockset_python](https://github.com/abr-ijs/robotblockset_python) |
 | **Simulation Backend** | MuJoCo (v3.0+) | [google-deepmind/mujoco](https://github.com/google-deepmind/mujoco) |
 | **Motion Planning** | OMPL (via RBS `JointPathPlanner`) | [OMPL Library](https://ompl.kavrakilab.org/) |
-| **Robot Hardware Setup** | OpenArms (Bimanual LeRobot Ecosystem) | [huggingface/lerobot](https://github.com/huggingface/lerobot) |
+| **Robot Hardware Setup** | OpenArms Bimanual Robotics | OpenArms Hardware Platform |
 | **Egocentric Vision** | DaiDai Lab Stream & Hand Tracking | [DaiDai Lab](https://wwnt.ai/) |
 | **Language & Tooling** | Python 3.10+, NumPy, SciPy, PyYAML, uv | Modern Python packaging |
 

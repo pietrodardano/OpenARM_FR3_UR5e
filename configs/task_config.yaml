@@ -7,9 +7,15 @@ task:
 
 # Vision & Egocentric Stream Parameters
 vision:
-  source: "mock" # options: "mock", "daidai_stream", "realsense", "zed"
-  stream_uri: "tcp://127.0.0.1:5555"
+  source: "hbv_hd_camera" # options: "mock", "hbv_hd_camera", "opencv", "stream"
+  camera_device: "HBV HD CAMERA" # Model ID: UVC Camera 0x0ac8:0x0346
+  device_index: 1 # Typically 1 on macOS (0 is MacBook camera)
+  width: 1280
+  height: 720
   fps: 30
+  pixel_format: "uyvy422" # or "bgr0"
+  rotate_180: true # Set true if egocentric clip mounts camera inverted
+  stream_uri: "tcp://127.0.0.1:5555"
   confidence_threshold: 0.65
   smoothing:
     filter_type: "exponential" # "exponential" or "butterworth"

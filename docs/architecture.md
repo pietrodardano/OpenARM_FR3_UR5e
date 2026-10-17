@@ -27,7 +27,7 @@ graph TD
     subgraph Execution ["4. Simulation & Hardware Bridge"]
         MuJoCoEnv["MuJoCo Physics Sim (500Hz)"]
         CollisionCheck["Self-Collision & Contact Inspector"]
-        OpenArmsHW["OpenArms Bimanual Hardware (LeRobot)"]
+        OpenArmsHW["OpenArms Bimanual Hardware"]
         OMPL --> MuJoCoEnv
         MuJoCoEnv --> CollisionCheck
         MuJoCoEnv -.-> OpenArmsHW

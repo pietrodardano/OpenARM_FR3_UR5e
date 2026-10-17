@@ -4,7 +4,7 @@
 [![RBS](https://img.shields.io/badge/Robotics-RobotBlockSet%20(JSI)-blue.svg)](https://github.com/abr-ijs/robotblockset_python)
 [![Simulation](https://img.shields.io/badge/Sim-MuJoCo%203.0+-red.svg)](https://github.com/google-deepmind/mujoco)
 [![Planning](https://img.shields.io/badge/Planning-OMPL-green.svg)](https://ompl.kavrakilab.org/)
-[![Hardware](https://img.shields.io/badge/Robot-OpenArms%20%2F%20LeRobot-yellow.svg)](https://github.com/huggingface/lerobot)
+[![Hardware](https://img.shields.io/badge/Robot-OpenArms%20Bimanual-yellow.svg)](#)
 [![Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
 
 RoboTokens maps human egocentric vision and real-time 3D hand tracking from the **DaiDai Lab** ecosystem into safe, collision-free bimanual robot control commands for dual **OpenArms**, powered by Jožef Stefan Institute's **RobotBlockSet (RBS)**, **MuJoCo** simulation backend, and **OMPL** motion planning.
@@ -16,8 +16,9 @@ RoboTokens maps human egocentric vision and real-time 3D hand tracking from the 
 | Ecosystem Component | Upstream Repository / Reference | Role in Stack |
 |---|---|---|
 | **RobotBlockSet (RBS by JSI)** | [abr-ijs/robotblockset_python](https://github.com/abr-ijs/robotblockset_python) | Unified robot kinematics, spatial transforms, and `JointPathPlanner` |
-| **OpenArms / LeRobot** | [huggingface/lerobot](https://github.com/huggingface/lerobot) | Bimanual robot morphology, actuator interfaces, and physical hardware bridge |
+| **OpenArms** | OpenArms Hardware Platform | Bimanual robot morphology, actuator interfaces, and physical hardware bridge |
 | **DaiDai Lab Ecosystem** | [wwnt.ai](https://wwnt.ai/) | Wearable egocentric camera feed, 3D hand landmark tracking, and gesture streaming |
+| **Egocentric Camera HW** | [HBV HD CAMERA Specs](docs/camera_specifications.md) | UVC HD webcam (0x0ac8:0x0346), 720p/1080p @ 30 FPS, plug-and-play |
 | **MuJoCo** | [google-deepmind/mujoco](https://github.com/google-deepmind/mujoco) | High-fidelity contact physics, collision checking, and interactive visualization |
 | **OMPL** | [ompl.kavrakilab.org](https://ompl.kavrakilab.org/) | Sampling-based collision-free motion planning in dual-arm configuration space |
 
