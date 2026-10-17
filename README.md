@@ -141,3 +141,52 @@ For details on the system mathematics, control state machines, and pitch roadmap
 - [Architecture Overview](file:///Users/Q682676/Documents/RoboTokens/docs/architecture.md)
 - [Hackathon Roadmap & Pitch Deck](file:///Users/Q682676/Documents/RoboTokens/docs/hackathon_roadmap.md)
 - [AI Coding Directives](file:///Users/Q682676/Documents/RoboTokens/agents.md)
+
+---
+
+## 7. Dev Container & Tabletop Scene (OpenArm v1)
+
+All Python dependencies live inside a Docker image; nothing is installed on the host.
+
+```bash
+git submodule update --init          # upstream OpenArm MJCF (third_party/openarm_mujoco)
+docker/dev.sh build                  # build the image (re-run after changing dependencies)
+docker/dev.sh run pytest -q          # one-off command in the container
+docker/dev.sh shell                  # interactive shell
+docker/dev.sh lock                   # re-lock after editing pyproject.toml
+```
+
+VS Code: "Dev Containers: Reopen in Container" uses the same `docker/compose.yaml`.
+Rootless and rootful Docker are both handled (`docker/detect_user.sh`). macOS
+teammates can skip Docker and run `uv sync` natively against the same `uv.lock`.
+
+**Scene** — [assets/scenes/tabletop.xml](assets/scenes/tabletop.xml): OpenArm v1
+bimanual arms (parallel-jaw grippers, upstream model unmodified), a table (top at
+z = 0.30 m) and primitive objects: plate, cube, bottle, mug, apple, pen. Cameras:
+`head` (the robot's only vision sensor; pose/fovy are estimates until calibrated)
+plus debug views `overhead`, `front`, `three_quarter`.
+
+[src/simulation/tabletop_scene.py](src/simulation/tabletop_scene.py) loads it and adds:
+- `left_tcp` / `right_tcp` sites between the fingertips (the upstream
+  `*_ee_control_point` is at the wrist flange, ~20 cm behind the tips),
+- ideal gravity compensation on the robot links,
+- a home pose with the upper arms swung back (grippers clear of the table),
+- `reset()`, arm/gripper commands, TCP/object poses, offscreen rendering.
+
+Top-down grasps at table height reach roughly x = 0.15-0.35 m in front of the
+pedestal; objects are laid out inside that band.
+
+**Scripted pick and place** — [src/skills/pick_place.py](src/skills/pick_place.py):
+object poses are observed once (`perceive()`, ground truth in sim, standing in for a
+head-camera estimate) and remembered. Skills `pick(side, obj)` and
+`place(side, xy, surface_z)` are built from IK motion primitives
+([src/control/ik.py](src/control/ik.py), mink): `move_joint` for transit and
+`move_linear` for straight approach/lift lines (continuation IK, so a line stays on
+one IK branch). Grasp yaw is chosen near the arm's natural wrist yaw within the
+object's symmetry.
+
+```bash
+docker/dev.sh run python scripts/view_scene.py --render outputs/scene   # PNG per camera
+docker/dev.sh run python scripts/run_pick_place.py                      # outputs/pick_place.mp4
+docker/dev.sh shell  # then: python scripts/view_scene.py               # interactive viewer, needs $DISPLAY
+```

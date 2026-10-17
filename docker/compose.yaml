@@ -1,0 +1,26 @@
+# Used by both docker/dev.sh and .devcontainer/devcontainer.json.
+name: robotokens
+
+services:
+  dev:
+    image: robotokens-dev:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+    volumes:
+      - ..:/workspace
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    environment:
+      DISPLAY: ${DISPLAY:-}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    runtime: nvidia
+    ipc: host
+    network_mode: host
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: sleep infinity

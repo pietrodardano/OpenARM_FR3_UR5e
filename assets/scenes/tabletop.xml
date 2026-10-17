@@ -1,0 +1,153 @@
+<!--
+Tabletop pick-and-place scene: OpenArm v1 (OpenArm 1.0, parallel-jaw gripper)
+bimanual arms from third_party/openarm_mujoco (unmodified), a table, objects
+and cameras.
+
+World frame (same as upstream OpenArm): origin at the pedestal base on the
+floor, +x forward (towards the table), +y to the robot's left, +z up.
+Shoulders are at z=0.697; the table top is at z=0.30 (matches our mount).
+
+Objects sit within x = 0.20-0.37 m, inside the reach of top-down grasps at
+table height (the table is ~0.4 m below the shoulders).
+
+Objects are built from primitives so contacts stay cheap and stable. Each has a
+free joint "<name>_joint" and a site "<name>_site" at its grasp reference.
+
+View:  python scripts/view_scene.py
+       (python -m mujoco.viewer --mjcf assets/scenes/tabletop.xml also works, but
+        without the TCP sites that src/simulation/tabletop_scene.py adds)
+-->
+<mujoco model="robotokens_tabletop">
+  <compiler angle="radian"/>
+  <!-- Options do not carry across <attach>; the elliptic cone keeps pinched
+       objects from creeping out of the jaws. -->
+  <option timestep="0.001" integrator="implicitfast" cone="elliptic" impratio="10"/>
+  <statistic center="0.35 0 0.45" extent="1.3" meansize="0.05"/>
+
+  <visual>
+    <headlight diffuse="0.4 0.4 0.4" ambient="0.25 0.25 0.25" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="150" elevation="-25" offwidth="1280" offheight="960"/>
+    <quality shadowsize="8192"/>
+  </visual>
+
+  <default>
+    <default class="object">
+      <geom type="box" contype="1" conaffinity="1" condim="4" friction="1 0.01 0.001" solref="0.005 1"/>
+      <site group="4" size="0.006" rgba="1 1 0 1"/>
+      <default class="mug_wall">
+        <geom density="1200" rgba="0.92 0.92 0.88 1"/>
+      </default>
+      <default class="mug_handle">
+        <geom density="1200" rgba="0.92 0.92 0.88 1"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <model name="openarm" file="../../third_party/openarm_mujoco/v1/openarm_bimanual.xml"/>
+    <texture type="skybox" builtin="gradient" rgb1="0.55 0.55 0.58" rgb2="0.2 0.2 0.2" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.38 0.38 0.4" rgb2="0.3 0.3 0.32"
+             markrgb="0.6 0.6 0.6" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <material name="table_wood" rgba="0.82 0.71 0.55 1"/>
+  </asset>
+
+  <worldbody>
+    <attach model="openarm" prefix=""/>
+
+    <light pos="0 0 2" dir="0 0 -1" directional="true" diffuse="0.55 0.55 0.55"/>
+    <light pos="1.2 0.8 1.6" dir="-0.6 -0.4 -0.7" diffuse="0.3 0.3 0.3"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+
+    <!-- Head camera: the robot's only vision sensor. Roughly above the shoulders
+         (z=0.697), looking down at the table centre. Pose and fovy are estimates;
+         update them from the real mount / intrinsics once calibrated. -->
+    <camera name="head" pos="0.05 0.0 0.90" xyaxes="0 -1 0 0.923 0 0.385" fovy="60"/>
+
+    <!-- Debug views (not available on the real robot). -->
+    <camera name="overhead" pos="0.40 0.0 1.30" xyaxes="0 -1 0 1 0 0" fovy="55"/>
+    <camera name="front" pos="1.15 0.0 0.95" xyaxes="0 1 0 -0.4 0 1" fovy="55"/>
+    <camera name="three_quarter" pos="1.0 -0.85 1.0" xyaxes="0.794 0.607 0 -0.255 0.333 0.906" fovy="50"/>
+
+    <!-- Table: top at z=0.30. Same footprint as upstream's v2 pedestal scenes. -->
+    <body name="table" pos="0.47 0 0.2600">
+      <geom name="table_top" type="box" size="0.41 0.55 0.04" material="table_wood"
+            friction="1 0.005 0.0001" contype="1" conaffinity="1"/>
+      <site name="table_surface" pos="0 0 0.04" group="4" size="0.01"/>
+    </body>
+
+    <!-- Placement target: a shallow plate between the arms. -->
+    <body name="plate" pos="0.28 0.0 0.3000">
+      <freejoint name="plate_joint"/>
+      <geom name="plate_base" class="object" type="cylinder" size="0.09 0.004" pos="0 0 0.004"
+            mass="0.30" rgba="0.95 0.95 0.95 1"/>
+      <site name="plate_site" class="object" pos="0 0 0.008"/>
+    </body>
+
+    <!-- 5 cm cube: the easy first pick target. -->
+    <body name="cube" pos="0.20 -0.22 0.3250">
+      <freejoint name="cube_joint"/>
+      <geom name="cube_geom" class="object" size="0.025 0.025 0.025" mass="0.05" rgba="0.85 0.2 0.2 1"/>
+      <site name="cube_site" class="object"/>
+    </body>
+
+    <!-- ~500 ml bottle: body + shoulder + neck + cap. Origin at the bottom. -->
+    <body name="bottle" pos="0.30 -0.27 0.3000">
+      <freejoint name="bottle_joint"/>
+      <geom name="bottle_body" class="object" type="cylinder" size="0.032 0.07" pos="0 0 0.07"
+            mass="0.30" rgba="0.3 0.6 0.75 0.85"/>
+      <geom name="bottle_shoulder" class="object" type="cylinder" size="0.022 0.015" pos="0 0 0.155"
+            mass="0.01" rgba="0.3 0.6 0.75 0.85"/>
+      <geom name="bottle_neck" class="object" type="cylinder" size="0.013 0.012" pos="0 0 0.182"
+            mass="0.005" rgba="0.3 0.6 0.75 0.85"/>
+      <geom name="bottle_cap" class="object" type="cylinder" size="0.015 0.009" pos="0 0 0.203"
+            mass="0.005" rgba="0.15 0.35 0.8 1"/>
+      <site name="bottle_site" class="object" pos="0 0 0.10"/>
+    </body>
+
+    <!-- Mug: hollow, 12 wall segments + bottom + handle on local +x. Origin at the bottom.
+         Rotated so the handle faces the robot (-x). -->
+    <body name="mug" pos="0.34 0.28 0.3000" euler="0 0 3.1416">
+      <freejoint name="mug_joint"/>
+      <geom name="mug_bottom" class="mug_wall" type="cylinder" size="0.036 0.0025" pos="0 0 0.0025"/>
+      <geom class="mug_wall" pos="0.0335 0.0000 0.0500" euler="0 0 0.0000" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="0.0290 0.0167 0.0500" euler="0 0 0.5236" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="0.0168 0.0290 0.0500" euler="0 0 1.0472" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="0.0000 0.0335 0.0500" euler="0 0 1.5708" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="-0.0167 0.0290 0.0500" euler="0 0 2.0944" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="-0.0290 0.0167 0.0500" euler="0 0 2.6180" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="-0.0335 0.0000 0.0500" euler="0 0 3.1416" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="-0.0290 -0.0167 0.0500" euler="0 0 3.6652" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="-0.0168 -0.0290 0.0500" euler="0 0 4.1888" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="-0.0000 -0.0335 0.0500" euler="0 0 4.7124" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="0.0168 -0.0290 0.0500" euler="0 0 5.2360" size="0.0025 0.0101 0.0450"/>
+      <geom class="mug_wall" pos="0.0290 -0.0168 0.0500" euler="0 0 5.7596" size="0.0025 0.0101 0.0450"/>
+      <geom name="mug_handle_top" class="mug_handle" pos="0.047 0 0.078" size="0.012 0.005 0.004"/>
+      <geom name="mug_handle_bottom" class="mug_handle" pos="0.047 0 0.022" size="0.012 0.005 0.004"/>
+      <geom name="mug_handle_grip" class="mug_handle" pos="0.056 0 0.050" size="0.004 0.005 0.032"/>
+      <site name="mug_site" class="object" pos="0 0 0.05"/>
+      <site name="mug_handle_site" class="object" pos="0.056 0 0.050"/>
+    </body>
+
+    <!-- Apple: small (6.4 cm), slightly squashed sphere; fits the 8.6 cm gripper with margin. -->
+    <body name="apple" pos="0.21 0.20 0.3300">
+      <freejoint name="apple_joint"/>
+      <geom name="apple_geom" class="object" type="ellipsoid" size="0.032 0.032 0.030" mass="0.16"
+            rgba="0.75 0.1 0.1 1"/>
+      <geom name="apple_stem" class="object" type="capsule" size="0.003 0.006" pos="0 0 0.033"
+            mass="0.001" rgba="0.35 0.25 0.1 1"/>
+      <site name="apple_site" class="object"/>
+    </body>
+
+    <!-- Pen lying along x (barrel is along local y). The clip rests on the table beside the barrel so the pen cannot roll. -->
+    <body name="pen" pos="0.29 -0.14 0.3055" euler="0 0 -1.5708">
+      <freejoint name="pen_joint"/>
+      <geom name="pen_barrel" class="object" type="capsule" size="0.0055 0.065" euler="1.5708 0 0"
+            mass="0.012" rgba="0.1 0.1 0.12 1"/>
+      <geom name="pen_clip" class="object" size="0.0015 0.02 0.0015" pos="0.007 0.035 -0.004"
+            mass="0.001" rgba="0.75 0.75 0.78 1"/>
+      <site name="pen_site" class="object"/>
+    </body>
+  </worldbody>
+</mujoco>
