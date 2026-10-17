@@ -103,14 +103,15 @@ hardware:
   max_tracking_error_rad: 0.5        # sustained |setpoint - measured| => fault + hold
   tracking_error_time_s: 0.3
   missing_reply_time_s: 0.1
-  # Shutdown: move here (arms hanging) before disabling the motors.
+  # Zero pose (arms hanging): every test script starts and ends here (scripts/safe_zero.py),
+  # and stop() moves here before disabling.
   rest_qpos:
     left: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     right: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   rest_duration_s: 4.0
   # Gravity feedforward from the official model. Start at 0, then raise towards 1.0 while
   # the IK demo's measured-vs-commanded TCP error shrinks (sag is ~0.06 rad at home without it).
-  gravity_compensation_scale: 0.0
+  gravity_compensation_scale: 1.0
   realtime_priority: 0  # >0 requests SCHED_FIFO for the control thread (container has SYS_NICE)
 
 controllers:

@@ -29,6 +29,11 @@ services:
       - /dev:/dev
     device_cgroup_rules:
       - "c 81:* rmw"
+    # USER uid:gid in the Dockerfile drops supplementary groups; re-add them so the
+    # non-root user can open /dev/video* (camera) and serial adapters.
+    group_add:
+      - video
+      - dialout
     cap_add:
       - NET_ADMIN
       - SYS_NICE

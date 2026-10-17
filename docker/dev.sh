@@ -3,6 +3,8 @@
 #
 #   docker/dev.sh build          build the image (re-run after changing deps)
 #   docker/dev.sh shell          interactive shell in the container
+#   docker/dev.sh up             start a persistent container (robotokens-dev-1) for VS Code
+#                                "Dev Containers: Attach to Running Container..."
 #   docker/dev.sh run <cmd...>   run a one-off command, e.g. `docker/dev.sh run pytest`
 #   docker/dev.sh lock           regenerate uv.lock after editing pyproject.toml
 #   docker/dev.sh down           stop and remove the container
@@ -15,11 +17,11 @@ compose=(docker compose -f compose.yaml)
 # GPU is optional: robot control runs on the CPU, the GPU only matters for policies.
 if [[ "${ROBOTOKENS_GPU:-auto}" != "0" ]] && docker info -f '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia; then
   compose+=(-f compose.gpu.yaml)
-elif [[ "${1:-shell}" =~ ^(build|shell|run)$ ]]; then
+elif [[ "${1:-shell}" =~ ^(build|shell|run|up)$ ]]; then
   echo "[dev.sh] NVIDIA runtime not found (or ROBOTOKENS_GPU=0): running CPU-only." >&2
 fi
 
-if [[ "${DOCKER_ROOTLESS}" == "1" && "${1:-shell}" =~ ^(shell|run)$ ]]; then
+if [[ "${DOCKER_ROOTLESS}" == "1" && "${1:-shell}" =~ ^(shell|run|up)$ ]]; then
   echo "[dev.sh] WARNING: rootless Docker detected. The container will NOT see the host's" >&2
   echo "[dev.sh]          SocketCAN interfaces (can0/can1). Fine for sim/tests; use rootful" >&2
   echo "[dev.sh]          Docker on the robot PC. See docs/real_robot_deployment.md." >&2
@@ -36,6 +38,13 @@ case "${1:-shell}" in
     fi
     "${compose[@]}" run --rm dev bash
     ;;
+  up)
+    if [[ -n "${DISPLAY:-}" ]] && command -v xhost >/dev/null; then
+      xhost +SI:localuser:"$(id -un)" >/dev/null
+    fi
+    "${compose[@]}" up -d dev
+    echo "[dev.sh] Container running: attach VS Code to 'robotokens-dev-1', open /workspace." >&2
+    ;;
   run)
     shift
     "${compose[@]}" run --rm -T dev "$@"
@@ -49,7 +58,7 @@ case "${1:-shell}" in
     "${compose[@]}" down
     ;;
   *)
-    sed -n '2,9p' "$0"
+    sed -n '2,11p' "$0"
     exit 1
     ;;
 esac

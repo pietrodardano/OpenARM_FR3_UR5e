@@ -9,9 +9,9 @@ Exercise the joint position controller or the IK controller, in MuJoCo or on the
     # Real driver code path (threaded loop, safety, faults) against a simulated CAN bus
     python scripts/run_control_demo.py --backend fake --controller ik
 
-Sequence: start (hold measured pose) -> move_joints to home -> controller demo
--> gripper close/open -> back home -> stop (move to rest, disable motors).
-Ctrl+C at any time triggers the same safe stop.
+Sequence: start (hold measured pose) -> go to zero -> move_joints to home -> controller
+demo -> gripper close/open -> back home -> go to zero -> disable motors.
+Ctrl+C at any time goes to zero, then disables (scripts/safe_zero.py).
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from src.control.ik_controller import IKController  # noqa: E402
 from src.control.joint_position_controller import JointPositionController  # noqa: E402
 from src.control.robot_interface import GRIPPER_OPEN_M, SIDES, RobotBackend, arm_slice  # noqa: E402
+from scripts.safe_zero import run_with_zero  # noqa: E402
 
 RATE_HZ = 50.0
 
@@ -109,8 +110,7 @@ def main() -> None:
     ik = IKController.from_config(cfg, robot) if args.controller == "ik" else None
     home = {s: np.asarray(cfg["robot"]["home_qpos"][s]) for s in SIDES}
 
-    robot.start()
-    try:
+    def test() -> None:
         print("Moving to home...")
         robot.move_joints(home, gripper={s: GRIPPER_OPEN_M for s in SIDES}, duration=4.0)
         print(f"{args.controller} controller demo...")
@@ -119,12 +119,9 @@ def main() -> None:
         else:
             joint_demo(robot, args.amplitude)
         robot.move_joints(home, duration=2.0)
-        stats = robot.get_state().stats
-        print(f"Done. control loop stats: {stats}")
-    except KeyboardInterrupt:
-        print("\nInterrupted: stopping safely...")
-    finally:
-        robot.stop()
+        print(f"Done. control loop stats: {robot.get_state().stats}")
+
+    sys.exit(run_with_zero(robot, cfg, test))
 
 
 if __name__ == "__main__":

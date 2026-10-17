@@ -2,15 +2,16 @@
 """
 Gentle first-motion test: jog each joint by a few degrees, one at a time.
 
-Run scripts/check_robot.py (read-only) first. Then, with the arms hanging:
+Run scripts/check_robot.py (read-only) first. Then:
 
     python scripts/jog_joints.py --backend real              # +-3 deg at 2 deg/s, Enter before each joint
     python scripts/jog_joints.py --backend real --side right --joints 5,6,7
     python scripts/jog_joints.py --backend sim --render --yes  # rehearse in MuJoCo
 
-Sequence:
-1. Enable and hold the measured pose for 3 s (no motion). Report hold error and motor status.
-2. Plan every (arm, joint, +/-) jog from the current pose. A direction is skipped if it
+Sequence (scripts/safe_zero.py: Ctrl+C at any point = go to zero, then disable):
+0. Enable, hold the measured pose, go to zero (all joints 0, grippers closed).
+1. Hold zero for 3 s (no motion). Report hold error and motor status.
+2. Plan every (arm, joint, +/-) jog from zero. A direction is skipped if it
    - leaves the official joint limits (minus the safety margin), or
    - brings the arm closer to the torso or the other arm (official collision meshes),
      e.g. joint 2 inward from the hanging pose.
@@ -18,9 +19,7 @@ Sequence:
    measured motion, the tracking error, and whether the joint moved in the commanded
    direction (this checks the sign convention against the model).
 4. Optionally open/close the gripper a few mm.
-5. Stop: move to the rest pose (arms hanging, i.e. where you started) and disable.
-
-Ctrl+C at any point stops safely the same way.
+5. Go to zero, disable.
 """
 
 from __future__ import annotations
@@ -47,6 +46,7 @@ from src.control.robot_interface import (  # noqa: E402
     minimum_jerk,
 )
 from src.planning.openarm_kinematics import OpenArmKinematics  # noqa: E402
+from scripts.safe_zero import run_with_zero  # noqa: E402
 
 RATE_HZ = 100.0
 Jog = Tuple[Side, int, int]  # (side, joint index 0..6, direction +1/-1)
@@ -158,6 +158,7 @@ def main() -> None:
     parser.add_argument("--speed", type=float, default=2.0, help="jog speed (deg/s)")
     parser.add_argument("--side", choices=["left", "right", "both"], default="both")
     parser.add_argument("--joints", default="1,2,3,4,5,6,7", help="comma-separated joint numbers")
+    parser.add_argument("--zero-speed", type=float, default=10.0, help="peak joint speed for the zero moves (deg/s)")
     parser.add_argument("--gripper-mm", type=float, default=5.0, help="gripper open/close test (mm), 0 = skip")
     parser.add_argument("--clearance-tol-mm", type=float, default=1.0, help="max allowed clearance decrease")
     parser.add_argument("--min-clearance-mm", type=float, default=20.0, help="never plan below this clearance")
@@ -174,18 +175,9 @@ def main() -> None:
 
     kin = OpenArmKinematics(cfg["robot"]["mjcf_path"])
     robot = make_robot(cfg, args.backend, args.render)
-    robot.start()
-    try:
-        st = robot.get_state()
-        rest = {s: np.asarray(cfg["hardware"]["rest_qpos"][s]) for s in SIDES}
-        far = {s: np.degrees(np.max(np.abs(st.arms[s].q - rest[s]))) for s in SIDES}
-        if max(far.values()) > 10.0:
-            print(f"WARNING: arms are up to {max(far.values()):.0f} deg from the rest pose. "
-                  "The final stop() moves to rest before disabling.")
-            if not confirm("Continue anyway?", args.yes):
-                return
 
-        print("\n[1/3] Holding the current pose for 3 s (no motion)...")
+    def test() -> None:
+        print("\n[1/3] Holding the zero pose for 3 s (no motion)...")
         hold_check(robot, 3.0)
 
         jc = JointPositionController(robot)
@@ -214,14 +206,9 @@ def main() -> None:
                     jc.command(gripper_m={side: g})
                     robot.advance(args.gripper_mm / 1000 / cfg["hardware"]["max_gripper_velocity_m_s"] + 0.5)
                     print(f"    {side} gripper cmd {g * 1000:.1f} mm, measured {robot.get_state().arms[side].gripper * 1000:.1f} mm")
-        print("\nDone.")
-    except KeyboardInterrupt:
-        print("\nInterrupted.")
-    except RuntimeError as exc:
-        print(f"\nABORTED: {exc}")
-    finally:
-        print("Stopping (move to rest, disable)...")
-        robot.stop()
+        print("\nTest done.")
+
+    sys.exit(run_with_zero(robot, cfg, test, args.zero_speed, confirm_first=lambda m: confirm(m, args.yes)))
 
 
 if __name__ == "__main__":
