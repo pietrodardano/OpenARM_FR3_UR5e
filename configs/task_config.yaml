@@ -62,6 +62,7 @@ simulation:
   # Generated from the official v1 model by scripts/setup_openarm_v1_scene.py.
   # It remains Git-ignored with the official OpenArm source checkout.
   mjcf_path: "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
+  cross_embodiment_mjcf_path: "third_party/mujoco_menagerie/cross_embodiment_openarm_ur5e_fr3.xml"
   sim_timestep: 0.002 # 500 Hz
   control_decimation: 5 # 100 Hz control loop
   render: false # default headless, set true for interactive viewer
@@ -91,3 +92,11 @@ workcell:
     height_above_torso_m: 0.180
     downward_pitch_deg: 20.0
     fovy_deg: 70.0 # provisional; replace after intrinsic calibration
+
+cross_embodiment:
+  mode: "visual_only"
+  source_robot: "OpenArm v1 parallel-link, 7 DOF per arm"
+  target_robots:
+    - "UR5e, 6 DOF per arm"
+    - "Franka FR3, 7 DOF per arm"
+  transfer_representation: "Canonical task-frame TCP pose targets; never direct joint-angle transfer."

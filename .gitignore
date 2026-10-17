@@ -26,3 +26,6 @@ htmlcov/
 
 # Locally cloned official OpenArm SDK, model, simulation, and CAD assets.
 third_party/openarm/
+
+# Locally cloned CAD-backed MuJoCo Menagerie robots and generated comparison scenes.
+third_party/mujoco_menagerie/
