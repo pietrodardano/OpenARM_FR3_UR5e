@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import logging
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Any, Tuple, List
 import numpy as np
 
 # Configure logger
@@ -38,8 +38,8 @@ except ImportError:
 @dataclass
 class RobotArmState:
     """State of a single robot arm."""
-    joint_positions: np.ndarray  # shape (5,)
-    joint_velocities: np.ndarray  # shape (5,)
+    joint_positions: np.ndarray  # shape (7,)
+    joint_velocities: np.ndarray  # shape (7,)
     ee_position: np.ndarray  # shape (3,) [x, y, z] in robot base frame
     ee_orientation: np.ndarray  # shape (4,) [qw, qx, qy, qz]
     gripper_position: float  # slider joint value
@@ -63,22 +63,23 @@ class BimanualMuJoCoEnv:
     and verifying collision clearances.
     """
 
-    LEFT_JOINT_NAMES = [
-        "left_joint1", "left_joint2", "left_joint3", "left_joint4", "left_joint5"
-    ]
-    RIGHT_JOINT_NAMES = [
-        "right_joint1", "right_joint2", "right_joint3", "right_joint4", "right_joint5"
-    ]
+    ARM_DOF = 7
+    LEFT_JOINT_NAMES = [f"openarm_left_joint{i}" for i in range(1, ARM_DOF + 1)]
+    RIGHT_JOINT_NAMES = [f"openarm_right_joint{i}" for i in range(1, ARM_DOF + 1)]
     LEFT_ACTUATOR_NAMES = [
-        "left_act1", "left_act2", "left_act3", "left_act4", "left_act5", "left_act_gripper"
+        *(f"left_joint{i}_ctrl" for i in range(1, ARM_DOF + 1)), "left_finger1_ctrl"
     ]
     RIGHT_ACTUATOR_NAMES = [
-        "right_act1", "right_act2", "right_act3", "right_act4", "right_act5", "right_act_gripper"
+        *(f"right_joint{i}_ctrl" for i in range(1, ARM_DOF + 1)), "right_finger1_ctrl"
     ]
+    LEFT_TCP_BODY_NAME = "openarm_left_hand_tcp"
+    RIGHT_TCP_BODY_NAME = "openarm_right_hand_tcp"
+    LEFT_GRIPPER_JOINT_NAME = "openarm_left_finger_joint1"
+    RIGHT_GRIPPER_JOINT_NAME = "openarm_right_finger_joint1"
 
     def __init__(
         self,
-        xml_path: str = "configs/bimanual_openarms.xml",
+        xml_path: str = "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml",
         timestep: float = 0.002,
         render: bool = False,
     ):
@@ -101,12 +102,12 @@ class BimanualMuJoCoEnv:
         self.left_gripper_qpos_idx: int = -1
         self.right_gripper_qpos_idx: int = -1
 
-        self.left_ee_site_id: int = -1
-        self.right_ee_site_id: int = -1
+        self.left_tcp_body_id: int = -1
+        self.right_tcp_body_id: int = -1
 
         self._sim_time: float = 0.0
-        self._mock_q_left = np.zeros(5, dtype=np.float64)
-        self._mock_q_right = np.zeros(5, dtype=np.float64)
+        self._mock_q_left = np.zeros(self.ARM_DOF, dtype=np.float64)
+        self._mock_q_right = np.zeros(self.ARM_DOF, dtype=np.float64)
 
         self._initialize_model()
 
@@ -134,11 +135,11 @@ class BimanualMuJoCoEnv:
             self.right_qpos_indices.append(self.model.jnt_qposadr[jid])
             self.right_qvel_indices.append(self.model.jnt_dofadr[jid])
 
-        # Gripper joint indices
-        l_grip_jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "left_gripper_joint")
+        # The official parallel-link gripper actuator drives finger joint 1.
+        l_grip_jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, self.LEFT_GRIPPER_JOINT_NAME)
         self.left_gripper_qpos_idx = self.model.jnt_qposadr[l_grip_jid]
 
-        r_grip_jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, "right_gripper_joint")
+        r_grip_jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, self.RIGHT_GRIPPER_JOINT_NAME)
         self.right_gripper_qpos_idx = self.model.jnt_qposadr[r_grip_jid]
 
         # Actuator indices
@@ -150,21 +151,21 @@ class BimanualMuJoCoEnv:
             aid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
             self.right_act_indices.append(aid)
 
-        # End-effector site IDs
-        self.left_ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "left_ee")
-        self.right_ee_site_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, "right_ee")
+        # Use the physical hand TCP, not the wrist-level control-point sites.
+        self.left_tcp_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, self.LEFT_TCP_BODY_NAME)
+        self.right_tcp_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, self.RIGHT_TCP_BODY_NAME)
 
         self.reset()
-        logger.info(f"Loaded bimanual OpenArms MJCF. {self.model.nq} generalized coordinates.")
+        logger.info("Loaded official OpenArm v1 bimanual MJCF: %d arm DOF, %d total controls.", self.ARM_DOF, self.model.nu)
 
     def reset(self) -> BimanualState:
         """Reset simulation to nominal starting posture."""
         if HAS_MUJOCO and self.model is not None and self.data is not None:
             mujoco.mj_resetData(self.model, self.data)
 
-            # Set ready pose (shoulder lifted, elbow bent forward)
-            default_left_q = np.array([0.0, 0.4, 0.8, -0.4, 0.0], dtype=np.float64)
-            default_right_q = np.array([0.0, 0.4, 0.8, -0.4, 0.0], dtype=np.float64)
+            # A lifted, symmetric ready pose within official v1 joint limits.
+            default_left_q = np.array([0.0, -0.8, 0.0, 0.7, 0.0, 0.0, 0.0])
+            default_right_q = np.array([0.0, 0.8, 0.0, 0.7, 0.0, 0.0, 0.0])
 
             for idx, val in zip(self.left_qpos_indices, default_left_q):
                 self.data.qpos[idx] = val
@@ -173,8 +174,8 @@ class BimanualMuJoCoEnv:
 
             mujoco.mj_forward(self.model, self.data)
         else:
-            self._mock_q_left = np.array([0.0, 0.4, 0.8, -0.4, 0.0], dtype=np.float64)
-            self._mock_q_right = np.array([0.0, 0.4, 0.8, -0.4, 0.0], dtype=np.float64)
+            self._mock_q_left = np.array([0.0, -0.8, 0.0, 0.7, 0.0, 0.0, 0.0])
+            self._mock_q_right = np.array([0.0, 0.8, 0.0, 0.7, 0.0, 0.0, 0.0])
 
         return self.get_bimanual_state()
 
@@ -184,8 +185,8 @@ class BimanualMuJoCoEnv:
             # Left arm
             left_q = np.array([self.data.qpos[i] for i in self.left_qpos_indices])
             left_dq = np.array([self.data.qvel[i] for i in self.left_qvel_indices])
-            left_ee_pos = self.data.site_xpos[self.left_ee_site_id].copy()
-            left_ee_mat = self.data.site_xmat[self.left_ee_site_id].copy()
+            left_ee_pos = self.data.xpos[self.left_tcp_body_id].copy()
+            left_ee_mat = self.data.xmat[self.left_tcp_body_id].copy()
             left_ee_quat = np.zeros(4)
             mujoco.mju_mat2Quat(left_ee_quat, left_ee_mat)
             left_grip = float(self.data.qpos[self.left_gripper_qpos_idx])
@@ -194,8 +195,8 @@ class BimanualMuJoCoEnv:
             # Right arm
             right_q = np.array([self.data.qpos[i] for i in self.right_qpos_indices])
             right_dq = np.array([self.data.qvel[i] for i in self.right_qvel_indices])
-            right_ee_pos = self.data.site_xpos[self.right_ee_site_id].copy()
-            right_ee_mat = self.data.site_xmat[self.right_ee_site_id].copy()
+            right_ee_pos = self.data.xpos[self.right_tcp_body_id].copy()
+            right_ee_mat = self.data.xmat[self.right_tcp_body_id].copy()
             right_ee_quat = np.zeros(4)
             mujoco.mju_mat2Quat(right_ee_quat, right_ee_mat)
             right_grip = float(self.data.qpos[self.right_gripper_qpos_idx])
@@ -209,16 +210,16 @@ class BimanualMuJoCoEnv:
             sim_t = self._sim_time
             left_q = self._mock_q_left.copy()
             right_q = self._mock_q_right.copy()
-            left_dq = np.zeros(5)
-            right_dq = np.zeros(5)
+            left_dq = np.zeros(self.ARM_DOF)
+            right_dq = np.zeros(self.ARM_DOF)
             left_ee_pos = np.array([0.35, 0.18, 0.55])
             right_ee_pos = np.array([0.35, -0.18, 0.55])
             left_ee_quat = np.array([1.0, 0.0, 0.0, 0.0])
             right_ee_quat = np.array([1.0, 0.0, 0.0, 0.0])
             left_grip = 0.0
             right_grip = 0.0
-            left_ctrl = np.zeros(6)
-            right_ctrl = np.zeros(6)
+            left_ctrl = np.zeros(self.ARM_DOF + 1)
+            right_ctrl = np.zeros(self.ARM_DOF + 1)
             in_collision = False
             ncon = 0
 
@@ -259,22 +260,24 @@ class BimanualMuJoCoEnv:
         """
         Applies actuator targets and steps the MuJoCo physics simulation.
         Args:
-            left_joint_targets: 5-DOF joint angles for left arm.
-            left_gripper_target: Left gripper slider position [-0.035, 0].
-            right_joint_targets: 5-DOF joint angles for right arm.
-            right_gripper_target: Right gripper slider position [-0.035, 0].
+            left_joint_targets: Seven official OpenArm v1 left-arm joint angles.
+            left_gripper_target: Parallel-link finger-1 position in metres.
+            right_joint_targets: Seven official OpenArm v1 right-arm joint angles.
+            right_gripper_target: Parallel-link finger-1 position in metres.
             decimation: Number of simulation substeps to execute.
         """
         if HAS_MUJOCO and self.model is not None and self.data is not None:
             if left_joint_targets is not None:
-                for aid, target in zip(self.left_act_indices[:5], left_joint_targets):
+                self._validate_joint_targets(left_joint_targets, "left")
+                for aid, target in zip(self.left_act_indices[:self.ARM_DOF], left_joint_targets):
                     self.data.ctrl[aid] = target
-            self.data.ctrl[self.left_act_indices[5]] = left_gripper_target
+            self.data.ctrl[self.left_act_indices[self.ARM_DOF]] = left_gripper_target
 
             if right_joint_targets is not None:
-                for aid, target in zip(self.right_act_indices[:5], right_joint_targets):
+                self._validate_joint_targets(right_joint_targets, "right")
+                for aid, target in zip(self.right_act_indices[:self.ARM_DOF], right_joint_targets):
                     self.data.ctrl[aid] = target
-            self.data.ctrl[self.right_act_indices[5]] = right_gripper_target
+            self.data.ctrl[self.right_act_indices[self.ARM_DOF]] = right_gripper_target
 
             for _ in range(decimation):
                 mujoco.mj_step(self.model, self.data)
@@ -306,15 +309,188 @@ class BimanualMuJoCoEnv:
             geom1_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, geom1_id) or ""
             geom2_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, geom2_id) or ""
 
-            # Check for left-arm colliding with right-arm
+            # Finger-to-finger contact within the same parallel-link gripper is
+            # expected. Detect only contacts whose OpenArm side prefixes differ.
+            geom1_is_left = geom1_name.startswith("openarm_left_")
+            geom1_is_right = geom1_name.startswith("openarm_right_")
+            geom2_is_left = geom2_name.startswith("openarm_left_")
+            geom2_is_right = geom2_name.startswith("openarm_right_")
             is_l_r_collision = (
-                ("left" in geom1_name and "right" in geom2_name) or
-                ("right" in geom1_name and "left" in geom2_name)
+                (geom1_is_left and geom2_is_right) or
+                (geom1_is_right and geom2_is_left)
             )
             if is_l_r_collision:
                 return True, ncon
 
         return False, ncon
+
+    def _validate_joint_targets(self, targets: np.ndarray, side: str) -> None:
+        """Reject malformed targets before writing controls to the official model."""
+        values = np.asarray(targets, dtype=np.float64)
+        if values.shape != (self.ARM_DOF,):
+            raise ValueError(f"{side} OpenArm target must have shape ({self.ARM_DOF},), got {values.shape}.")
+        if not np.all(np.isfinite(values)):
+            raise ValueError(f"{side} OpenArm target contains non-finite values.")
+
+    def solve_position_ik(
+        self,
+        arm: str,
+        target_position: np.ndarray,
+        seed_joint_positions: np.ndarray,
+        tolerance_m: float = 0.005,
+        max_iterations: int = 150,
+        damping: float = 0.03,
+    ) -> Optional[np.ndarray]:
+        """Solve a position-only IK target using the official model Jacobian.
+
+        This utility is simulation-only. It deliberately leaves the live
+        simulation state unchanged and returns ``None`` when no solution meets
+        the requested Cartesian tolerance.
+        """
+        if not (HAS_MUJOCO and self.model is not None and self.data is not None):
+            return None
+
+        side = arm.lower()
+        if side not in {"left", "right"}:
+            raise ValueError("arm must be 'left' or 'right'.")
+        self._validate_joint_targets(seed_joint_positions, side)
+        target = np.asarray(target_position, dtype=np.float64)
+        if target.shape != (3,) or not np.all(np.isfinite(target)):
+            raise ValueError("target_position must contain three finite values.")
+
+        q_indices = self.left_qpos_indices if side == "left" else self.right_qpos_indices
+        dof_indices = self.left_qvel_indices if side == "left" else self.right_qvel_indices
+        body_id = self.left_tcp_body_id if side == "left" else self.right_tcp_body_id
+        joint_names = self.LEFT_JOINT_NAMES if side == "left" else self.RIGHT_JOINT_NAMES
+        joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in joint_names]
+        limits = self.model.jnt_range[joint_ids]
+        saved_qpos = self.data.qpos.copy()
+        saved_qvel = self.data.qvel.copy()
+        q = np.asarray(seed_joint_positions, dtype=np.float64).copy()
+
+        try:
+            for _ in range(max_iterations):
+                self.data.qpos[q_indices] = q
+                self.data.qvel[:] = 0.0
+                mujoco.mj_forward(self.model, self.data)
+                error = target - self.data.xpos[body_id]
+                if np.linalg.norm(error) <= tolerance_m:
+                    return q
+                jac_pos = np.zeros((3, self.model.nv))
+                jac_rot = np.zeros((3, self.model.nv))
+                mujoco.mj_jacBody(self.model, self.data, jac_pos, jac_rot, body_id)
+                jacobian = jac_pos[:, dof_indices]
+                step = jacobian.T @ np.linalg.solve(
+                    jacobian @ jacobian.T + damping**2 * np.eye(3), error
+                )
+                q = np.clip(q + np.clip(step, -0.08, 0.08), limits[:, 0], limits[:, 1])
+            return None
+        finally:
+            self.data.qpos[:] = saved_qpos
+            self.data.qvel[:] = saved_qvel
+            mujoco.mj_forward(self.model, self.data)
+
+    def solve_top_grasp_ik(
+        self,
+        arm: str,
+        target_position: np.ndarray,
+        seed_joint_positions: np.ndarray,
+        tolerance_m: float = 0.006,
+        tolerance_rad: float = 0.08,
+        max_iterations: int = 250,
+        damping: float = 0.05,
+    ) -> Optional[np.ndarray]:
+        """Solve a yaw-free top-down pose with local tool +Z facing downward."""
+        if not (HAS_MUJOCO and self.model is not None and self.data is not None):
+            return None
+        side = arm.lower()
+        if side not in {"left", "right"}:
+            raise ValueError("arm must be 'left' or 'right'.")
+        self._validate_joint_targets(seed_joint_positions, side)
+        target = np.asarray(target_position, dtype=np.float64)
+        if target.shape != (3,) or not np.all(np.isfinite(target)):
+            raise ValueError("target_position must contain three finite values.")
+
+        target_axis = np.array([0.0, 0.0, -1.0])
+        q_indices = self.left_qpos_indices if side == "left" else self.right_qpos_indices
+        dof_indices = self.left_qvel_indices if side == "left" else self.right_qvel_indices
+        body_id = self.left_tcp_body_id if side == "left" else self.right_tcp_body_id
+        joint_names = self.LEFT_JOINT_NAMES if side == "left" else self.RIGHT_JOINT_NAMES
+        joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in joint_names]
+        limits = self.model.jnt_range[joint_ids]
+        saved_qpos = self.data.qpos.copy()
+        saved_qvel = self.data.qvel.copy()
+        q = np.asarray(seed_joint_positions, dtype=np.float64).copy()
+
+        try:
+            for _ in range(max_iterations):
+                self.data.qpos[q_indices] = q
+                self.data.qvel[:] = 0.0
+                mujoco.mj_forward(self.model, self.data)
+                position_error = target - self.data.xpos[body_id]
+                current_axis = self.data.xmat[body_id].reshape(3, 3)[:, 2]
+                # Cross-product error aligns the tool axis while leaving yaw free.
+                rotation_error = np.cross(current_axis, target_axis)
+                if (
+                    np.linalg.norm(position_error) <= tolerance_m
+                    and np.linalg.norm(rotation_error) <= tolerance_rad
+                    and np.dot(current_axis, target_axis) > 0.0
+                ):
+                    return q
+                jac_pos = np.zeros((3, self.model.nv))
+                jac_rot = np.zeros((3, self.model.nv))
+                mujoco.mj_jacBody(self.model, self.data, jac_pos, jac_rot, body_id)
+                jacobian = np.vstack((jac_pos[:, dof_indices], jac_rot[:, dof_indices]))
+                error = np.concatenate((position_error, rotation_error))
+                step = jacobian.T @ np.linalg.solve(
+                    jacobian @ jacobian.T + damping**2 * np.eye(6), error
+                )
+                q = np.clip(q + np.clip(step, -0.06, 0.06), limits[:, 0], limits[:, 1])
+            return None
+        finally:
+            self.data.qpos[:] = saved_qpos
+            self.data.qvel[:] = saved_qvel
+            mujoco.mj_forward(self.model, self.data)
+
+    def is_collision_free_configuration(self, arm: str, joint_positions: np.ndarray) -> bool:
+        """Check a candidate arm posture against table and opposite-arm contacts.
+
+        Contacts with the grasp cube are permitted so the top-down end pose can
+        make contact. This validity test is for offline simulation planning.
+        """
+        if not (HAS_MUJOCO and self.model is not None and self.data is not None):
+            return False
+        side = arm.lower()
+        if side not in {"left", "right"}:
+            raise ValueError("arm must be 'left' or 'right'.")
+        self._validate_joint_targets(joint_positions, side)
+        q_indices = self.left_qpos_indices if side == "left" else self.right_qpos_indices
+        arm_prefix = f"openarm_{side}_"
+        other_prefix = "openarm_right_" if side == "left" else "openarm_left_"
+        saved_qpos = self.data.qpos.copy()
+        saved_qvel = self.data.qvel.copy()
+        try:
+            self.data.qpos[q_indices] = joint_positions
+            self.data.qvel[:] = 0.0
+            mujoco.mj_forward(self.model, self.data)
+            for contact_index in range(self.data.ncon):
+                contact = self.data.contact[contact_index]
+                first = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom1) or ""
+                second = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, contact.geom2) or ""
+                touches_active_arm = first.startswith(arm_prefix) or second.startswith(arm_prefix)
+                touches_table_or_other_arm = (
+                    first == "work_table_top"
+                    or second == "work_table_top"
+                    or first.startswith(other_prefix)
+                    or second.startswith(other_prefix)
+                )
+                if touches_active_arm and touches_table_or_other_arm:
+                    return False
+            return True
+        finally:
+            self.data.qpos[:] = saved_qpos
+            self.data.qvel[:] = saved_qvel
+            mujoco.mj_forward(self.model, self.data)
 
     def compute_ik_step(
         self,
@@ -325,27 +501,27 @@ class BimanualMuJoCoEnv:
     ) -> np.ndarray:
         """
         Damped least-squares inverse kinematics step for a single arm.
-        Returns new joint position target (5-DOF).
+        Returns new joint position target (7-DOF).
         """
         if not (HAS_MUJOCO and self.model and self.data):
-            return np.zeros(5)
+            return np.zeros(self.ARM_DOF)
 
         is_left = arm.lower() == "left"
-        site_id = self.left_ee_site_id if is_left else self.right_ee_site_id
+        body_id = self.left_tcp_body_id if is_left else self.right_tcp_body_id
         q_indices = self.left_qpos_indices if is_left else self.right_qpos_indices
 
         # Current end-effector position
-        current_pos = self.data.site_xpos[site_id]
+        current_pos = self.data.xpos[body_id]
         pos_error = target_pos - current_pos
 
         # Compute Jacobian at the end-effector site
         jac_pos = np.zeros((3, self.model.nv))
         jac_rot = np.zeros((3, self.model.nv))
-        mujoco.mj_jacSite(self.model, self.data, jac_pos, jac_rot, site_id)
+        mujoco.mj_jacBody(self.model, self.data, jac_pos, jac_rot, body_id)
 
         # Slice relevant joint DOFs
         dof_indices = self.left_qvel_indices if is_left else self.right_qvel_indices
-        J = jac_pos[:, dof_indices]  # (3, 5)
+        J = jac_pos[:, dof_indices]  # (3, 7)
 
         # DLS formula: dq = J^T (J J^T + lambda^2 I)^(-1) dx
         JJT = J @ J.T + (damping ** 2) * np.eye(3)
@@ -353,7 +529,10 @@ class BimanualMuJoCoEnv:
 
         current_q = np.array([self.data.qpos[i] for i in q_indices])
         new_q = current_q + step_scale * delta_q
-        return new_q
+        joint_names = self.LEFT_JOINT_NAMES if is_left else self.RIGHT_JOINT_NAMES
+        joint_ids = [mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name) for name in joint_names]
+        limits = self.model.jnt_range[joint_ids]
+        return np.clip(new_q, limits[:, 0], limits[:, 1])
 
     def close(self) -> None:
         """Close viewer and clean resources."""

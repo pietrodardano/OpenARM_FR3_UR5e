@@ -59,7 +59,35 @@ safety:
 
 # Simulation & Execution Rates
 simulation:
-  mjcf_path: "configs/bimanual_openarms.xml"
+  # Generated from the official v1 model by scripts/setup_openarm_v1_scene.py.
+  # It remains Git-ignored with the official OpenArm source checkout.
+  mjcf_path: "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
   sim_timestep: 0.002 # 500 Hz
   control_decimation: 5 # 100 Hz control loop
   render: false # default headless, set true for interactive viewer
+
+# Fixed physical workcell geometry. World frame: +x forward, +y left, +z up.
+workcell:
+  arm_mount_height_m: 1.330
+  torso:
+    profile_width_m: 0.060
+    height_m: 1.420
+  table:
+    top_height_m: 0.750
+    top_thickness_m: 0.040
+    # Provisional footprint, centered in front of the torso; replace with measurements.
+    length_m: 1.200
+    width_m: 0.800
+    center_x_m: 0.650
+  pick_place_demo:
+    block_size_m: [0.040, 0.050, 0.100]
+    cube_center_m: [0.259, 0.194, 0.800]
+    place_zone_center_m: [0.200, 0.250, 0.750]
+    top_approach_clearance_m: 0.150
+    lateral_raise_tcp_m: [0.250, 0.500, 1.050]
+  rgb_camera:
+    model: "HBV HD CAMERA"
+    offset_forward_from_torso_m: 0.070
+    height_above_torso_m: 0.180
+    downward_pitch_deg: 20.0
+    fovy_deg: 70.0 # provisional; replace after intrinsic calibration

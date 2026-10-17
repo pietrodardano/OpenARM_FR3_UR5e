@@ -35,7 +35,6 @@ RoboTokens/
 ├── pyproject.toml              # Modern Python packaging configuration
 ├── requirements.txt            # Python dependencies
 ├── configs/
-│   ├── bimanual_openarms.xml   # Dual-arm OpenArms MuJoCo MJCF model & workspace
 │   └── task_config.yaml        # Vision, planning, safety & simulation parameters
 ├── src/
 │   ├── vision/                 # DaiDai Lab egocentric stream & hand tracking listener
@@ -115,7 +114,7 @@ python3 scripts/run_pipeline.py --render --steps 500
 1. **Egocentric Coordinate Transformation:**
    Converts camera coordinates ($+X$ right, $+Y$ down, $+Z$ forward) to robot base coordinates ($+X$ forward, $+Y$ left, $+Z$ up) with automatic exponential moving average (EMA) smoothing and workspace bounding.
 2. **RBS & OMPL Dual-Arm Planning:**
-   Joint-space collision checking over the 10-DOF bimanual configuration space $q \in \mathbb{R}^{10}$, preventing arm-to-arm collision in the shared center table workspace.
+   Joint-space collision checking over the 14-DOF bimanual arm configuration space $q \in \mathbb{R}^{14}$, preventing arm-to-arm collision in the shared workspace. The active model is OpenArm v1 with seven arm joints and a parallel-link gripper per side.
 3. **Safety Barriers:**
    - Cartesian bounding box $[0.15 \le x \le 0.55, -0.45 \le y \le 0.45, 0.38 \le z \le 0.75]$ m.
    - Dual-arm end-effector minimum clearance ($8\text{ cm}$).

@@ -81,10 +81,10 @@ class TestOMPLPlanner(unittest.TestCase):
     def test_joint_path_planner(self):
         planner = BimanualOMPLPlanner(max_planning_time=0.1, interpolation_steps=15)
 
-        q_left_start = np.zeros(5)
-        q_right_start = np.zeros(5)
-        q_left_goal = np.array([0.2, 0.3, -0.4, 0.1, 0.0])
-        q_right_goal = np.array([-0.2, 0.3, -0.4, -0.1, 0.0])
+        q_left_start = np.zeros(7)
+        q_right_start = np.zeros(7)
+        q_left_goal = np.array([0.2, -0.1, -0.4, 0.1, 0.0, 0.0, 0.0])
+        q_right_goal = np.array([-0.2, 0.1, -0.4, 0.1, 0.0, 0.0, 0.0])
 
         traj = planner.plan_bimanual_joint_path(
             q_left_start, q_right_start, q_left_goal, q_right_goal, duration=0.5
@@ -92,8 +92,8 @@ class TestOMPLPlanner(unittest.TestCase):
 
         self.assertEqual(traj.status, PlanningResultStatus.SUCCESS)
         self.assertEqual(len(traj.timestamps), 15)
-        self.assertEqual(traj.left_trajectory.shape, (15, 5))
-        self.assertEqual(traj.right_trajectory.shape, (15, 5))
+        self.assertEqual(traj.left_trajectory.shape, (15, 7))
+        self.assertEqual(traj.right_trajectory.shape, (15, 7))
         # Start and end waypoint match
         self.assertTrue(np.allclose(traj.left_trajectory[0], q_left_start))
         self.assertTrue(np.allclose(traj.left_trajectory[-1], q_left_goal))
@@ -101,30 +101,30 @@ class TestOMPLPlanner(unittest.TestCase):
     def test_collision_detection_in_planner(self):
         planner = BimanualOMPLPlanner()
         # Inward collision pose: arms severely crossing each other
-        q_left_cross = np.array([-1.5, 0.0, 0.0, 0.0, 0.0])
-        q_right_cross = np.array([1.5, 0.0, 0.0, 0.0, 0.0])
+        q_left_cross = np.array([-1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        q_right_cross = np.array([1.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
         traj = planner.plan_bimanual_joint_path(
-            np.zeros(5), np.zeros(5), q_left_cross, q_right_cross
+            np.zeros(7), np.zeros(7), q_left_cross, q_right_cross
         )
         self.assertEqual(traj.status, PlanningResultStatus.COLLISION)
 
 
 class TestSimulationEnv(unittest.TestCase):
     def test_env_initialization_and_step(self):
-        xml_path = "configs/bimanual_openarms.xml"
+        xml_path = "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
         env = BimanualMuJoCoEnv(xml_path=xml_path, render=False)
 
         state = env.reset()
-        self.assertEqual(len(state.left.joint_positions), 5)
-        self.assertEqual(len(state.right.joint_positions), 5)
+        self.assertEqual(len(state.left.joint_positions), 7)
+        self.assertEqual(len(state.right.joint_positions), 7)
         self.assertEqual(len(state.left.ee_position), 3)
         self.assertEqual(len(state.right.ee_position), 3)
 
         # Step with new target
         step_state = env.step(
-            left_joint_targets=np.array([0.1, 0.2, 0.3, 0.1, 0.0]),
-            right_joint_targets=np.array([-0.1, 0.2, 0.3, -0.1, 0.0]),
+            left_joint_targets=np.array([0.1, -0.1, 0.1, 0.1, 0.0, 0.0, 0.0]),
+            right_joint_targets=np.array([-0.1, 0.1, 0.1, 0.1, 0.0, 0.0, 0.0]),
         )
         self.assertFalse(step_state.in_collision)
         env.close()
@@ -132,7 +132,7 @@ class TestSimulationEnv(unittest.TestCase):
 
 class TestBimanualController(unittest.TestCase):
     def test_controller_pipeline_step(self):
-        xml_path = "configs/bimanual_openarms.xml"
+        xml_path = "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
         env = BimanualMuJoCoEnv(xml_path=xml_path, render=False)
         planner = BimanualOMPLPlanner()
         mapper = EgocentricToRobotMapper()
