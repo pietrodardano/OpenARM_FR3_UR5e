@@ -201,7 +201,17 @@ class OpenArmBimanual(RobotBackend):
     def read_passive(self) -> RobotState:
         """Reads joint positions with the motors left as they are (no enable, no motion)."""
         self.open()
-        readings = {side: self.buses[side].refresh() for side in SIDES}
+        # Replies land after the first refresh returns (they show up one call late): retry until
+        # every motor has answered, otherwise the first read is the all-zero default.
+        for _ in range(10):
+            readings = {side: self.buses[side].refresh() for side in SIDES}
+            if all(r > 0 for side in SIDES for r in readings[side].responses):
+                break
+            time.sleep(0.01)
+        silent = {side: [i + 1 for i, r in enumerate(readings[side].responses) if r == 0] for side in SIDES}
+        silent = {side: ids for side, ids in silent.items() if ids}
+        if silent:
+            raise RuntimeError(f"motors did not reply (1-7 = joints, 8 = gripper): {silent}")
         return self._make_state(readings, setpoint=None, fault=None)
 
     def start(self) -> None:
