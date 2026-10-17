@@ -15,7 +15,7 @@ at $z=0$.
 | --- | --- |
 | OpenArm shoulder centers | $(0, 0, 1.330)\,\mathrm{m}$ |
 | Square aluminum torso profile | $0.060\,\mathrm{m} \times 0.060\,\mathrm{m}$, from ground to $z=1.420\,\mathrm{m}$ |
-| Tabletop surface | $z=0.750\,\mathrm{m}$ |
+| Tabletop surface | $z=0.725\,\mathrm{m}$ |
 | Camera mount origin | $(0.070, 0, 1.600)\,\mathrm{m}$ |
 | Camera optical axis | Forward, pitched $20^\circ$ downward from horizontal |
 
@@ -24,7 +24,7 @@ The official model places `arm_origin` $0.697\,\mathrm{m}$ above
 $z=0.633\,\mathrm{m}$, giving the measured shoulder-center height.
 
 The table is a collision-enabled $40\,\mathrm{mm}$ thick top, with its upper
-surface at the measured $750\,\mathrm{mm}$ height. Its currently configured
+surface at the measured $725\,\mathrm{mm}$ height. Its currently configured
 $1.20\,\mathrm{m} \times 0.80\,\mathrm{m}$ footprint is provisional until
 the physical tabletop is measured.
 

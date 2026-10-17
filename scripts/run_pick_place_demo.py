@@ -57,13 +57,13 @@ from src.simulation.mujoco_env import BimanualMuJoCoEnv
 
 
 SCENE_PATH = PROJECT_ROOT / "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
-PICK_CENTER = np.array([0.259, 0.194, 0.800])
-PLACE_CENTER = np.array([0.200, 0.250, 0.750])
+PICK_CENTER = np.array([0.259, 0.194, 0.775])  # 0.725 m table + half block
+PLACE_CENTER = np.array([0.200, 0.250, 0.725])
 TOP_CLEARANCE_M = 0.150
 LATERAL_RAISE_TCP = np.array([0.250, 0.500, 1.050])
 # Verified reachable TCP pose for a lateral parallel-link grasp. The cube is
 # centered between the official finger collision meshes at this posture.
-LATERAL_GRASP_TCP = np.array([0.305, 0.183, 0.820])
+LATERAL_GRASP_TCP = np.array([0.305, 0.183, 0.795])
 VISUAL_GRIPPER_CLOSED_POSITION_M = 0.020
 
 

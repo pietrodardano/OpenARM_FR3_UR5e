@@ -1,84 +1,117 @@
 # RoboTokens Architecture Overview
 
-## 1. System High-Level Data Flow
+The system answers a question vision cannot: *which of two identical-looking objects is
+full?* Perception finds the objects; the arm lifts each one and reads its own joint
+torques; the task layer decides and acts. The task spec is in [demo_task.md](demo_task.md).
+
+## 1. Data Flow
 
 ```mermaid
 graph TD
-    subgraph Egocentric Perception ["1. Egocentric Perception (DaiDai Lab)"]
-        CamStream["RGB-D Video Stream"]
-        HandTrack["3D Hand Tracker (21 Keypoints)"]
-        CamStream --> HandTrack
+    subgraph Perception ["1. Perception (vision branch)"]
+        Cam["RGB camera, torso mount"]
+        DINO["GroundingDINO: boxes from text prompt"]
+        SAM["SAM2: masks"]
+        VLM["VLM (optional): verify category"]
+        Proj["Mask centroid ray ∩ table plane"]
+        Cam --> DINO --> SAM --> VLM --> Proj
     end
 
-    subgraph Coordinate Transformation ["2. Coordinate Transform & Filtering"]
-        CamOrigin["Zero-Calibration Origin (p_cam,0)"]
-        EMASmooth["EMA Temporal Filter (alpha=0.75)"]
-        CartBounds["Cartesian Workspace Safety Clipper"]
-        HandTrack --> CamOrigin --> EMASmooth --> CartBounds
+    subgraph Task ["2. Task layer (main: src/task)"]
+        FSM["WeighAndSortTask state machine"]
+        Cmp["compare_estimates: Δm, z"]
+        Contact["ExternalContactDetector"]
+        Proj -- "ObjectDetection (x, y, yaw), base frame" --> FSM
+        FSM --> Cmp
+        FSM --> Contact
     end
 
-    subgraph Coordination & Planning ["3. RBS & OMPL Motion Planning"]
-        DualState["Dual-Arm Proximity Monitor"]
-        RBS_IK["RBS Jacobian DLS Inverse Kinematics"]
-        OMPL["RBS JointPathPlanner (RRTConnect / OMPL)"]
-        CartBounds --> DualState --> RBS_IK --> OMPL
+    subgraph Robot ["3. Robot (src/task/openarm_adapter → proven controller)"]
+        IK["IKController.move_l (Cartesian)"]
+        Grip["Gripper torque mode"]
+        Payload["payload.measure_load"]
+        Backend["RobotBackend: OpenArmBimanual | OpenArmSim"]
+        FSM -- "ManipulationSkills" --> IK --> Backend
+        FSM -- "ManipulationSkills" --> Grip --> Backend
+        FSM -- "PayloadEstimator" --> Payload --> Backend
+        Backend -- "joint torques τ" --> Payload
+        Backend -- "joint torques τ" --> Contact
     end
 
-    subgraph Execution ["4. Simulation & Hardware Bridge"]
-        MuJoCoEnv["MuJoCo Physics Sim (500Hz)"]
-        CollisionCheck["Self-Collision & Contact Inspector"]
-        OpenArmsHW["OpenArms Bimanual Hardware"]
-        OMPL --> MuJoCoEnv
-        MuJoCoEnv --> CollisionCheck
-        MuJoCoEnv -.-> OpenArmsHW
-    end
+    Backend --> HW["Damiao motors via openarm_can (250 Hz)"]
 ```
 
----
-
-## 2. Mathematical Mapping: Human Hands to Robot End-Effectors
-
-The human operator's hand movement in camera coordinates $p_{cam} = [x_{cam}, y_{cam}, z_{cam}]^T$ is converted to the robot world base frame $p_{robot} = [x_{rob}, y_{rob}, z_{rob}]^T$ via:
-
-$$p_{robot} = p_{robot,0} + s \cdot \mathbf{M} \cdot (p_{cam} - p_{cam,0})$$
-
-Where:
-- $p_{cam,0}$: The calibrated resting pose of the human operator's hand in camera space.
-- $p_{robot,0}$: The nominal home position of the corresponding robot arm end-effector.
-- $s$: Scaling factor (default $1.2$) ensuring human desktop reach comfortably covers the robot's physical reach.
-- $\mathbf{M}$: Coordinate permutation matrix transforming camera axes ($+X$ right, $+Y$ down, $+Z$ forward) to robot base axes ($+X$ forward, $+Y$ left, $+Z$ up):
-
-$$\mathbf{M} = \begin{bmatrix} 0 & 0 & 1 \\ -1 & 0 & 0 \\ 0 & -1 & 0 \end{bmatrix}$$
+The task layer only knows the three Protocols in
+[src/task/interfaces.py](../src/task/interfaces.py). The robot side is
+[src/task/openarm_adapter.py](../src/task/openarm_adapter.py); vision is mocked from
+`demo.manual_objects` ([src/task/mocks.py](../src/task/mocks.py)) until the vision branch is merged.
 
 ---
 
-## 3. RobotBlockSet (RBS) Integration Points
+## 2. Object Position From an RGB Camera
 
-1. **RBS Kinematics:** Computes forward kinematics (FK) and analytical/numerical Jacobians for the 6-DOF OpenArms kinematics chain.
-2. **RBS JointPathPlanner:** Solves collision-free motion planning queries using OMPL algorithms (such as `RRTConnect` and `BiTRRT`).
-3. **Collision Avoidance:** Evaluates state validity across the 10-DOF bimanual configuration space $q \in \mathbb{R}^{10}$, preventing arm-to-arm self-collisions and arm-to-table collisions.
+There is no depth sensor. Objects rest on a table of known height, so a pixel defines a
+ray and the table plane defines where it ends. For intrinsics $K$, camera-to-base
+rotation $R_C^R$ and camera center $c$ (from the ChArUco extrinsic calibration):
 
----
+$$d = R_C^R\, K^{-1} [u,\; v,\; 1]^T, \qquad p = c + \lambda d, \qquad \lambda = \frac{z_{plane} - c_z}{d_z}$$
 
-## 4. OpenArm Source of Truth
-
-The OpenArm repository at [enactic/openarm](https://github.com/enactic/openarm) should be treated as the mechanical reference for link dimensions, assembly constraints, and CAD-driven geometry assumptions.
-
-For robot control, the upstream `openarm_can` package is the low-level hardware interface to target first. `openarm_description` supplies the robot model, and `openarm_mujoco` supplies the corresponding simulator assets.
-
-For this project, the practical integration path is:
-
-1. Convert the upstream geometry into MuJoCo-compatible bodies, joints, and collision meshes.
-2. Mirror the same kinematic chain in the RBS layer so FK, Jacobians, and planner state validity stay aligned with the simulator.
-3. Keep the control stack Python-first for the initial implementation, with optional C++ acceleration later if profiling shows a real bottleneck.
-4. Avoid ROS and ROS2 unless a future hardware interface explicitly requires them; the current architecture is designed to run without them.
-5. Treat direct robot I/O as a thin adapter beneath the planner/controller layers, not as part of the teleoperation logic.
+$(u, v)$ is the SAM2 mask centroid. $z_{plane}$ is the table top, or the plane through
+the object's visible center height, consistently. The vision branch owns this step and
+delivers $(x, y)$ in the robot base frame. The task layer adds the grasp height:
+$z_{grasp} = z_{table} + h_{grasp}$.
 
 ---
 
-## 5. Safety & Fail-Safe Mechanisms
+## 3. Mass From Joint Torques ([src/estimation/payload.py](../src/estimation/payload.py))
 
-- **Cartesian Workspace Clipping:** Rigid boundary box $[0.15 \le x \le 0.55, -0.45 \le y \le 0.45, 0.38 \le z \le 0.75]$ meters preventing arm overextension or table strikes.
-- **Dual-Arm Proximity Barrier:** Enforces a minimum clearance distance $d_{min} = 8\text{ cm}$ between left and right end-effectors to prevent tool-center collisions.
-- **Velocity Clamping:** Limits joint speed to $2.5\text{ rad/s}$ and Cartesian speed to $0.6\text{ m/s}$.
-- **Automatic E-Stop:** If contact forces or forbidden link intersections are detected during physics stepping, the controller halts all trajectory execution immediately.
+A payload $m$ held at the TCP adds a joint-torque residual
+
+$$\tau_{meas} - \tau_{model}(q) \approx J_z(q)^T\, m\, g$$
+
+where $J_z$ is the vertical row of the TCP position Jacobian, computed on the official
+MuJoCo model. The least-squares mass over the load-bearing joints $\mathcal{J}$ is
+
+$$\hat m = \frac{\sum_{j \in \mathcal{J}} J_{z,j}\, r_j}{g \sum_{j \in \mathcal{J}} J_{z,j}^2}$$
+
+- **Dithering:** the joints move ±1° over whole sine cycles. Coulomb friction changes
+  sign with the motion and averages out, which removes the stick-slip ambiguity of a static hold.
+- **One $\hat m$ per cycle:** the spread across cycles gives a standard error.
+- **Same pose for both objects:** the fixed weigh pose (elbow 90°) cancels most model
+  and calibration errors in the *difference*.
+
+---
+
+## 4. Decision
+
+$$\Delta m = \hat m_{heavy} - \hat m_{light}, \qquad z = \frac{\Delta m}{\sqrt{se_1^2 + se_2^2}}$$
+
+- $z \ge 3$: conclusive.
+- Below that, both objects are weighed again and each object's two estimates are
+  combined by inverse variance ([src/task/weighing.py](../src/task/weighing.py)).
+- If it is still below 3, the task stops without sorting.
+
+---
+
+## 5. Felt Handover
+
+At the handover pose the arm holds still and records a holding-torque baseline
+$\mu_j, \sigma_j$ over $T_b$. Contact is latched when
+
+$$\exists j:\; |\tau_j - \mu_j| > \max(k\sigma_j,\; \delta_{min}) \quad \text{for } T_{hold}$$
+
+A person who takes the object supports its weight or pulls on it, and both shift the
+load-bearing torques. A hand that is merely visible near the object does not. The
+gripper opens only on contact; after `timeout_s` the object goes to the heavy bin instead.
+Implementation: [src/task/contact.py](../src/task/contact.py).
+
+---
+
+## 6. Simulation and Planning
+
+- `OpenArmSim` ([src/simulation/openarm_sim.py](../src/simulation/openarm_sim.py)) runs the official MuJoCo model behind the same
+  `RobotBackend` API, so the whole demo can be dry-run (`run_weigh_demo.py --backend sim --rehearse`).
+- The measured workcell scene ([physical_workcell.md](physical_workcell.md)) and the
+  OMPL pick-and-place ([run_pick_place_demo.py](../scripts/run_pick_place_demo.py))
+  validate reachability and collision-free table approaches in the combined 14-DOF space.
+- RBS/OMPL is optional. Real-arm motion uses the official-model mink IK ([src/planning/openarm_ik.py](../src/planning/openarm_ik.py)).

@@ -1,4 +1,9 @@
-# HBV HD CAMERA (DaiDai Lab Egocentric Vision Device)
+# HBV HD CAMERA (Workcell RGB Camera)
+
+The only perception sensor of the demo: an RGB camera (no depth) fixed on the torso
+mount, looking forward and 20° down at the table ([physical_workcell.md](physical_workcell.md)).
+The vision branch runs GroundingDINO + SAM2 (+ optional VLM) on its frames and projects
+mask centroids onto the known table plane ([demo_task.md](demo_task.md#3-frames-and-the-vision-contract)).
 
 ## 1. Hardware Identification & System Profile
 
@@ -25,8 +30,8 @@ Extracted directly via macOS hardware subsystem (`system_profiler SPCameraDataTy
   - `yuyv422`
   - `nv12`
   - `0rgb` / `bgr0`
-- **Field of View (FOV):** Wide-angle egocentric lens (approx. 90°–120° DFOV typical for HBVCAM egocentric mounts)
-- **Mounting Note:** Default physical orientation on egocentric wearable clips is often inverted; apply 180° rotation in software if worn top-mounted.
+- **Field of View (FOV):** Wide-angle lens (approx. 90°–120° DFOV typical for HBVCAM modules); the scene model uses a provisional 70° vertical FOV until intrinsic calibration
+- **Mounting Note:** If the module is mounted upside down on the torso bracket, apply a 180° rotation in software (`vision.rotate_180`) before calibration and detection.
 
 ---
 
@@ -63,10 +68,10 @@ while cap.isOpened():
     if not ret:
         break
 
-    # If camera is mounted inverted on glasses/headset:
+    # If the camera is mounted upside down on its bracket:
     # frame = cv2.rotate(frame, cv2.ROTATE_180)
 
-    cv2.imshow("HBV HD Camera - Egocentric Stream", frame)
+    cv2.imshow("HBV HD Camera - Workcell View", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
@@ -79,7 +84,7 @@ cv2.destroyAllWindows()
 # Capture single test frame on macOS
 ffmpeg -f avfoundation -framerate 30 -video_size 1280x720 -pix_fmt uyvy422 -i "HBV HD CAMERA" -vframes 1 -y snapshot.jpg
 
-# Low-latency RTSP/UDP stream for teleoperation:
+# Low-latency UDP stream to a vision process on another machine:
 ffmpeg -f avfoundation -framerate 30 -video_size 1280x720 -pix_fmt uyvy422 -i "HBV HD CAMERA" \
        -vf "hflip,vflip" -c:v libx264 -preset ultrafast -tune zerolatency -f mpegts udp://127.0.0.1:5555
 ```

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Thin wrapper around docker compose for the RoboTokens deployment container.
+#
+#   docker/dev.sh build          build the image (re-run after changing deps)
+#   docker/dev.sh shell          interactive shell in the container
+#   docker/dev.sh up             start a persistent container (robotokens-dev-1) for VS Code
+#                                "Dev Containers: Attach to Running Container..."
+#   docker/dev.sh run <cmd...>   run a one-off command, e.g. `docker/dev.sh run pytest`
+#   docker/dev.sh lock           regenerate uv.lock after editing pyproject.toml
+#   docker/dev.sh down           stop and remove the container
+set -euo pipefail
+
+cd "$(dirname "$0")"
+./detect_user.sh
+source .env
+compose=(docker compose -f compose.yaml)
+# GPU is optional: robot control runs on the CPU, the GPU only matters for policies.
+if [[ "${ROBOTOKENS_GPU:-auto}" != "0" ]] && docker info -f '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia; then
+  compose+=(-f compose.gpu.yaml)
+elif [[ "${1:-shell}" =~ ^(build|shell|run|up)$ ]]; then
+  echo "[dev.sh] NVIDIA runtime not found (or ROBOTOKENS_GPU=0): running CPU-only." >&2
+fi
+
+if [[ "${DOCKER_ROOTLESS}" == "1" && "${1:-shell}" =~ ^(shell|run|up)$ ]]; then
+  echo "[dev.sh] WARNING: rootless Docker detected. The container will NOT see the host's" >&2
+  echo "[dev.sh]          SocketCAN interfaces (can0/can1). Fine for sim/tests; use rootful" >&2
+  echo "[dev.sh]          Docker on the robot PC. See docs/real_robot_deployment.md." >&2
+fi
+
+case "${1:-shell}" in
+  build)
+    "${compose[@]}" build
+    ;;
+  shell)
+    # Allow the container to open windows on the host X server, if there is one.
+    if [[ -n "${DISPLAY:-}" ]] && command -v xhost >/dev/null; then
+      xhost +SI:localuser:"$(id -un)" >/dev/null
+    fi
+    "${compose[@]}" run --rm dev bash
+    ;;
+  up)
+    if [[ -n "${DISPLAY:-}" ]] && command -v xhost >/dev/null; then
+      xhost +SI:localuser:"$(id -un)" >/dev/null
+    fi
+    "${compose[@]}" up -d dev
+    echo "[dev.sh] Container running: attach VS Code to 'robotokens-dev-1', open /workspace." >&2
+    ;;
+  run)
+    shift
+    "${compose[@]}" run --rm -T dev "$@"
+    ;;
+  lock)
+    # Resolve with uv's own image (non-slim: has git for the openarm_can git dep).
+    docker run --rm -u "${HOST_UID}:${HOST_GID}" --tmpfs /tmp:mode=1777 -e UV_CACHE_DIR=/tmp/uv-cache \
+      -v "$(cd .. && pwd)":/w -w /w ghcr.io/astral-sh/uv:0.9.5-python3.11-bookworm uv lock
+    ;;
+  down)
+    "${compose[@]}" down
+    ;;
+  *)
+    sed -n '2,11p' "$0"
+    exit 1
+    ;;
+esac

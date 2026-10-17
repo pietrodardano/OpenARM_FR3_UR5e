@@ -1,28 +1,35 @@
-# RoboTokens: Egocentric Vision to Bimanual OpenArms Control via RobotBlockSet (RBS)
+# RoboTokens: Vision Cannot Weigh — Proprioceptive Object Discrimination on OpenArm
 
-[![Track](https://img.shields.io/badge/Hackathon-Track%202%3A%20DaiDai%20Lab%20%2B%20OpenArms-blueviolet.svg)](#)
-[![RBS](https://img.shields.io/badge/Robotics-RobotBlockSet%20(JSI)-blue.svg)](https://github.com/abr-ijs/robotblockset_python)
+[![Track](https://img.shields.io/badge/Hackathon-Track%202%3A%20OpenArms-blueviolet.svg)](#)
+[![Vision](https://img.shields.io/badge/Vision-GroundingDINO%20%2B%20SAM2-orange.svg)](#)
 [![Simulation](https://img.shields.io/badge/Sim-MuJoCo%203.0+-red.svg)](https://github.com/google-deepmind/mujoco)
 [![Planning](https://img.shields.io/badge/Planning-OMPL-green.svg)](https://ompl.kavrakilab.org/)
-[![Hardware](https://img.shields.io/badge/Robot-OpenArms%20Bimanual-yellow.svg)](#)
-[![Status](https://img.shields.io/badge/Build-Passing-brightgreen.svg)](#)
+[![Hardware](https://img.shields.io/badge/Robot-OpenArm%20v1-yellow.svg)](https://github.com/enactic/openarm)
 
-RoboTokens maps human egocentric vision and real-time 3D hand tracking from the **DaiDai Lab** ecosystem into safe, collision-free bimanual robot control commands for dual **OpenArms**, powered by Jožef Stefan Institute's **RobotBlockSet (RBS)**, **MuJoCo** simulation backend, and **OMPL** motion planning.
+Two cans look identical: one is full, one is empty. No camera can tell which is which.
+RoboTokens shows that a robot can, by **interacting**:
+
+1. An RGB camera with **GroundingDINO + SAM2** (+ optional VLM) finds the two look-alike objects on a table of known height.
+2. The **OpenArm** grasps and lifts each object, estimates its mass from its own **joint torques**, puts it back, and compares the two.
+3. The robot acts on what it felt:
+   - **Sort:** heavy and light objects go to predefined bins.
+   - **Handover:** the robot offers the heavy object to a person and opens the gripper only when it **feels** them take it, again through the joint torques.
+
+Full task spec: [docs/demo_task.md](docs/demo_task.md).
 
 ---
 
-## 1. Core Ecosystem References
+## 1. Components
 
-| Ecosystem Component | Upstream Repository / Reference | Role in Stack |
+| Component | Source | Role |
 |---|---|---|
-| **RobotBlockSet (RBS by JSI)** | [abr-ijs/robotblockset_python](https://github.com/abr-ijs/robotblockset_python) | Unified robot kinematics, spatial transforms, and `JointPathPlanner` |
-| **OpenArm Control** | [enactic/openarm](https://github.com/enactic/openarm) | `openarm_can` for low-level motor control, `openarm_description` for the robot model, and `openarm_mujoco` for simulation |
-| **OpenArm Docs & CAD** | [enactic/openarm](https://github.com/enactic/openarm) | Reference geometry, mechanical assets, and control-oriented design details for MuJoCo and RBS integration |
-| **OpenArms** | OpenArms Hardware Platform | Bimanual robot morphology, actuator interfaces, and physical hardware bridge |
-| **DaiDai Lab Ecosystem** | [wwnt.ai](https://wwnt.ai/) | Wearable egocentric camera feed, 3D hand landmark tracking, and gesture streaming |
-| **Egocentric Camera HW** | [HBV HD CAMERA Specs](docs/camera_specifications.md) | UVC HD webcam (0x0ac8:0x0346), 720p/1080p @ 30 FPS, plug-and-play |
-| **MuJoCo** | [google-deepmind/mujoco](https://github.com/google-deepmind/mujoco) | High-fidelity contact physics, collision checking, and interactive visualization |
-| **OMPL** | [ompl.kavrakilab.org](https://ompl.kavrakilab.org/) | Sampling-based collision-free motion planning in dual-arm configuration space |
+| **OpenArm v1** (parallel-link gripper) | [enactic/openarm](https://github.com/enactic/openarm): `openarm_can`, `openarm_description`, `openarm_mujoco` | Robot, official model, SocketCAN control. Left arm active |
+| **Real-robot controller + weighing** | [src/control/](src/control/), [src/hardware/](src/hardware/), [src/estimation/](src/estimation/) (from `deploy/openarm-real`) | Proven `openarm_can` driver, Cartesian `move_l`, gripper torque mode, torque-based load comparison, `OpenArmSim` |
+| **Object perception** | vision branch (not merged yet) | GroundingDINO boxes, SAM2 masks, optional VLM check, XY on the table plane |
+| **Task layer** | `main`: [src/task/](src/task/) | Demo state machine, component contracts, felt-handover contact detection, mocks |
+| **HBV HD CAMERA** | [docs/camera_specifications.md](docs/camera_specifications.md) | RGB only, torso mount, 720p/1080p @ 30 FPS |
+| **MuJoCo** | [google-deepmind/mujoco](https://github.com/google-deepmind/mujoco) | Measured workcell, dry runs, collision checking |
+| **RobotBlockSet + OMPL** (optional) | [abr-ijs/robotblockset_python](https://github.com/abr-ijs/robotblockset_python), [OMPL](https://ompl.kavrakilab.org/) | Collision-free planning in the simulated workcell |
 
 ---
 
@@ -30,101 +37,116 @@ RoboTokens maps human egocentric vision and real-time 3D hand tracking from the 
 
 ```
 RoboTokens/
-├── agents.md                   # AI agent directives & engineering context
-├── README.md                   # Main documentation & setup guide
-├── pyproject.toml              # Modern Python packaging configuration
-├── requirements.txt            # Python dependencies
+├── agents.md                    # Engineering directives, branch policy, invariants
+├── README.md
+├── pyproject.toml / uv.lock     # uv-managed environment
 ├── configs/
-│   └── task_config.yaml        # Vision, planning, safety & simulation parameters
+│   ├── task_config.yaml         # All tunables, incl. the `demo:` section
+│   └── charuco_*.{pdf,png}      # Camera calibration boards
 ├── src/
-│   ├── vision/                 # DaiDai Lab egocentric stream & hand tracking listener
-│   │   ├── __init__.py
-│   │   └── hand_tracker_listener.py
-│   ├── planning/               # RBS wrappers, OMPL path planner, & trajectory generation
-│   │   ├── __init__.py
-│   │   └── ompl_planner.py
-│   ├── control/                # Dual-arm coordination, safety bounding, & execution loop
-│   │   ├── __init__.py
-│   │   └── bimanual_controller.py
-│   └── simulation/             # MuJoCo environment setup with RBS conventions
-│       ├── __init__.py
-│       └── mujoco_env.py
+│   ├── task/                    # Final demo
+│   │   ├── interfaces.py        #   ObjectDetector / ManipulationSkills / PayloadEstimator contracts
+│   │   ├── weigh_and_sort.py    #   WeighAndSortTask state machine (sort | handover)
+│   │   ├── openarm_adapter.py   #   OpenArmSkills / OpenArmPayloadEstimator on the real controller
+│   │   ├── weighing.py          #   Mass comparison (Δm, z) and re-weigh combination
+│   │   ├── contact.py           #   External-contact detection from joint torques
+│   │   └── mocks.py             #   Offline mocks of vision, robot and estimator
+│   ├── control/                 # RobotBackend API, safety filter, joint + IK (Cartesian) controllers
+│   ├── hardware/                # Real OpenArm driver; only openarm_bus.py imports openarm_can
+│   ├── estimation/payload.py    # Load measurement from joint torques (dithered), comparison
+│   ├── planning/                # Official-model kinematics + mink IK; OMPL / RBS for the workcell sim
+│   ├── simulation/              # OpenArmSim (same API as the driver), real_mirror.py (live twin), workcell wrapper
+│   └── vision/                  # Earlier stream listener (superseded by the vision branch)
+├── docker/                      # Robot-PC container (rootful Docker, SocketCAN, openarm_can 1.4.0)
 ├── scripts/
-│   ├── run_pipeline.py         # Main execution entrypoint (vision -> OMPL -> MuJoCo)
-│   └── calibrate_camera.py     # Operator zero-calibration tool
-├── tests/
-│   ├── __init__.py
-│   └── test_pipeline.py        # Comprehensive unit & integration tests
+│   ├── run_weigh_demo.py        # Final demo runner: --backend mock | sim | fake | real
+│   ├── setup_can.sh, check_robot.py, read_ee_pose.py, go_zero.py, jog_joints.py   # Bring-up
+│   ├── cartesian_points.py, ik_axis_test.py, run_control_demo.py                   # Motion tests
+│   ├── grip_torque_test.py, compare_weights.py                                     # Grip + weighing
+│   ├── safe_zero.py             # Shared zero-start/zero-stop lifecycle of every motion script
+│   ├── setup_openarm_v1_scene.py, run_pick_place_demo.py   # Workcell scene + OMPL pick & place
+│   ├── setup_cross_embodiment_scene.py, view_cross_embodiment_scene.py
+│   └── generate_charuco_board.py
+├── tests/                       # test_task.py (demo + adapter), test_real_mirror.py, test_openarm_control.py (driver), test_pipeline.py
 └── docs/
-    ├── architecture.md         # Detailed mathematical derivations & system diagram
-    └── hackathon_roadmap.md    # 30-hour sprint roadmap & pitch notes
+    ├── demo_task.md             # Final demo spec, reach limits, integration status
+    ├── real_robot_deployment.md # Driver, safety behaviour, bring-up checklist, grip limits
+    ├── architecture.md          # Data flow and the math (projection, mass, decision, contact)
+    ├── hackathon_roadmap.md     # Workstreams and pitch
+    ├── physical_workcell.md, openarm_v1_environment.md, camera_specifications.md, cross_embodiment.md
 ```
+
+The real-robot code was copied from `deploy/openarm-real`; that branch is not merged.
+The vision branch (GroundingDINO + SAM2, implementing `ObjectDetector`) is **not merged yet**.
+See [docs/demo_task.md §9](docs/demo_task.md#9-integration-status).
 
 ---
 
-## 3. Quickstart & Installation
+## 3. Setup
 
-### Step 1: Clone the Repository
 ```bash
 git clone https://github.com/pietrodardano/RoboTokens.git
 cd RoboTokens
-```
-
-### Step 2: Environment Setup
-Use `uv` to create the locked development environment:
-
-```bash
 uv venv --python 3.11
 uv sync --extra rbs --extra dev
 ```
 
-For the official OpenArm v1 sources, the parallel-link MuJoCo scene, validation, rendering, and hardware boundary, follow [docs/openarm_v1_environment.md](docs/openarm_v1_environment.md).
+For the official OpenArm v1 sources and the MuJoCo workcell scene, follow
+[docs/openarm_v1_environment.md](docs/openarm_v1_environment.md).
 
 ---
 
-## 4. Running the Pipeline
+## 4. Running
 
-### Run Unit Tests
-Verify all coordinate transforms, OMPL planners, and simulation environments:
+### Final demo
+```bash
+uv run python scripts/run_weigh_demo.py --mode sort                               # mocks: weigh both, sort
+uv run python scripts/run_weigh_demo.py --mode handover                           # mocks: hand over the heavy one
+uv run python scripts/run_weigh_demo.py --backend sim --render --rehearse --yes   # MuJoCo rehearsal
+uv run python scripts/run_weigh_demo.py --backend real --mode sort                # real left arm
+uv run python scripts/run_weigh_demo.py --backend real --mode sort --mirror       # + live MuJoCo twin
+```
+`--mirror` opens a read-only MuJoCo twin that follows the real arm's *measured* joints (the robot is the leader), with the commanded TCP, table, objects, bins and handover pose overlaid. On macOS run it under `mjpython`.
+Until vision is merged, object positions come from `demo.manual_objects` or `--objects "x,y;x,y"`.
+The real backend refuses to run until the table height is measured. See
+[docs/demo_task.md §7–8](docs/demo_task.md#7-reach-layout-and-motion-safety).
+
+### Real robot (Linux PC, container)
+```bash
+docker/dev.sh build && docker/dev.sh shell        # rootful Docker on the robot PC (SocketCAN)
+scripts/setup_can.sh && python scripts/check_robot.py
+python scripts/cartesian_points.py --backend sim --render --yes    # rehearse, then --backend real
+python scripts/compare_weights.py --backend real --labels full empty --grip-torque 1.0
+```
+Bring-up checklist and safety behaviour: [docs/real_robot_deployment.md](docs/real_robot_deployment.md).
+
+### Tests
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
 
-### Calibrate Egocentric Tracker
-Hold your hands in the neutral resting pose in front of the camera to zero out reference offsets:
+### Simulation workcell
 ```bash
-python3 scripts/calibrate_camera.py
+uv run python scripts/setup_openarm_v1_scene.py
+uv run python scripts/run_pick_place_demo.py --show       # OMPL collision-checked pick & place
 ```
-
-### Launch the Full Pipeline (Vision -> RBS / OMPL -> MuJoCo)
-Run the pipeline with the mock egocentric tracking generator:
-```bash
-python3 scripts/run_pipeline.py --steps 150
-```
-
-To run with an interactive MuJoCo graphical viewer:
-```bash
-python3 scripts/run_pipeline.py --render --steps 500
-```
+See [docs/physical_workcell.md](docs/physical_workcell.md) and [docs/cross_embodiment.md](docs/cross_embodiment.md).
 
 ---
 
-## 5. System Architecture Highlights
+## 5. Safety Rules of the Demo
 
-1. **Egocentric Coordinate Transformation:**
-   Converts camera coordinates ($+X$ right, $+Y$ down, $+Z$ forward) to robot base coordinates ($+X$ forward, $+Y$ left, $+Z$ up) with automatic exponential moving average (EMA) smoothing and workspace bounding.
-2. **RBS & OMPL Dual-Arm Planning:**
-   Joint-space collision checking over the 14-DOF bimanual arm configuration space $q \in \mathbb{R}^{14}$, preventing arm-to-arm collision in the shared workspace. The active model is OpenArm v1 with seven arm joints and a parallel-link gripper per side.
-3. **Safety Barriers:**
-   - Cartesian bounding box $[0.15 \le x \le 0.55, -0.45 \le y \le 0.45, 0.38 \le z \le 0.75]$ m.
-   - Dual-arm end-effector minimum clearance ($8\text{ cm}$).
-   - Automatic contact E-Stop in simulation and hardware.
+- The gripper opens in the handover **only after external contact is felt** in the joint torques. On timeout the object goes to the heavy bin.
+- The robot **never sorts on an inconclusive comparison** ($z < 3$ after one re-weigh).
+- Both objects are weighed at the same fixed pose. Cans are grasped upright at ≈1 Nm. Only the left arm is used.
+- Every Cartesian move is IK-checked along its whole line before the arm moves. Real-arm motion runs through the proven driver (joint-limit clamp, velocity limits, latched faults). Keep the hardware e-stop in reach.
 
 ---
 
-## 6. Hackathon Presentation & Documentation
+## 6. Further Documentation
 
-For details on the system mathematics, control state machines, and pitch roadmap, see:
-- [Architecture Overview](file:///Users/Q682676/Documents/RoboTokens/docs/architecture.md)
-- [Hackathon Roadmap & Pitch Deck](file:///Users/Q682676/Documents/RoboTokens/docs/hackathon_roadmap.md)
-- [AI Coding Directives](file:///Users/Q682676/Documents/RoboTokens/agents.md)
+- [Demo task spec & integration status](docs/demo_task.md)
+- [Real robot deployment](docs/real_robot_deployment.md)
+- [Architecture & math](docs/architecture.md)
+- [Roadmap & pitch](docs/hackathon_roadmap.md)
+- [Engineering directives for agents](agents.md)

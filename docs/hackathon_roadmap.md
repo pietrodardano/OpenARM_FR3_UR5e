@@ -1,36 +1,45 @@
 # 30-Hour Hackathon Roadmap & Pitch Notes
 
-## Track 2: DaiDai Lab + OpenArms + RobotBlockSet (RBS)
+## Track 2: OpenArms + RobotBlockSet (RBS) + MuJoCo
 
-### 30-Hour Sprint Timeline
+### Workstreams
 
-| Phase | Milestone | Hours | Status | Key Deliverable |
-|---|---|---|---|---|
-| **Phase 1** | Foundation & Architecture | 0 – 6 | **COMPLETED** | Repo scaffold, `agents.md`, bimanual MJCF, RBS wrapper, mock stream, unit tests |
-| **Phase 2** | Live Perception Stream | 6 – 12 | Next Up | Connect DaiDai Lab live camera / WebSocket stream, wrist pose + 21-joint landmark ingestion |
-| **Phase 3** | RBS OMPL & Dynamic Obstacles | 12 – 18 | Scheduled | Real-time C-space collision checking with table obstacles and moving targets |
-| **Phase 4** | Bimanual Coordination & Grasping | 18 – 24 | Scheduled | Dual-arm handover task, pick-and-place with synchronous pinch detection |
-| **Phase 5** | Physical OpenArms Sim2Real | 24 – 28 | Scheduled | Transfer joint trajectories to OpenArms hardware via serial/Dynamixel bridge |
-| **Phase 6** | Demo Video & Presentation | 28 – 30 | Scheduled | Record side-by-side demo: Operator egocentric view + MuJoCo sim + OpenArms arm motion |
+| Workstream | Where | Status | Deliverable |
+|---|---|---|---|
+| Foundation & sim workcell | `main` | **Done** | Official OpenArm v1 scene, measured workcell, OMPL pick-and-place, cross-embodiment view |
+| Real-robot control & weighing | `main` (from `deploy/openarm-real`) | **Done** | Cartesian `move_l`, gripper torque mode, torque-based load comparison tested on the real left arm |
+| Vision: object finding | vision branch | **In progress, not merged** | GroundingDINO + SAM2 (+ VLM) → object XY on the table in the base frame |
+| Demo state machine + robot adapter | `main` (`src/task/`) | **Done (mock + sim rehearsal)** | Detect → weigh × 2 → compare → sort / felt handover; `OpenArmSkills` with IK-checked moves |
+| Physics sim of the full task | `main` | **Done** | 72.5 cm workcell, real can lifting, torque weighing, sort + felt handover (simulated user) |
+| First real run | robot | Next | Cans/bins at the §7 layout, `--backend real --mirror` with manual object positions |
+| Integration with vision | after vision merge | Waiting | Vision `ObjectDetector` replaces `demo.manual_objects`; calibrate contact thresholds |
+| Rehearsal | `OpenArmSim` → real arm | Scheduled | Both modes end to end with cans and boxes |
+| Demo video & pitch | — | Scheduled | Camera view with masks, robot weighing, result overlay |
+
+The remaining checklist is in [demo_task.md §9](demo_task.md#9-integration-status).
 
 ---
 
-## 3-Minute Hackathon Pitch Script
+## 3-Minute Pitch Script
 
-1. **The Hook (30s):**
-   > "Teleoperating dual-arm robotic systems traditionally requires cumbersome VR controllers, expensive motion capture suits, or rigid master-slave pantographs. We present **RoboTokens**: an intuitive, direct egocentric teleoperation and bimanual planning pipeline powered by DaiDai Lab's wearable vision, JSI's RobotBlockSet (RBS), and MuJoCo."
+1. **The hook (30 s):**
+   > "Here are two cans. Same brand, same color, same dent. One is full, one is empty. Ask the best vision model you know which one is full: it can't. The information isn't in the pixels."
 
-2. **The Innovation (60s):**
-   > "Using only a wearable egocentric camera feed, our pipeline tracks the operator's 3D hand poses and gestures at 30Hz, maps them through an adaptive kinematic transformer, and uses RBS's OMPL motion planner to compute safe, collision-free joint trajectories in real time. We dynamically prevent the dual arms from colliding with each other or the table."
+2. **The idea (45 s):**
+   > "GroundingDINO and SAM2 tell our OpenArm *where* the cans are, from a single RGB camera and the known table height. Then the robot does what a person does: it picks each one up and *feels* it. No force sensor, no scale: just the torques its own joint motors already report, with a small dithering motion that cancels friction."
 
-3. **The Live Demo (60s):**
-   > "Watch as the human reaches forward: the bimanual OpenArms robot tracks every subtle gesture in MuJoCo with sub-centimeter accuracy, smooth minimum-jerk interpolation, and instant grasping upon index-thumb pinch."
+3. **The live demo (75 s):**
+   > "Object one: grasp, lift, weigh, put back. Object two: the same. The robot now knows that object one is about 330 grams heavier, with a confidence of more than three sigma. It sorts them into the 'full' and 'empty' bins.
+   > Second mode: it offers the full can to me. I reach in, and it doesn't let go while my hand is just near it. When I actually take the weight, it feels the change in its joints and opens the gripper."
 
-4. **The Impact (30s):**
-   > "Low-cost hardware, zero heavy infrastructure, open-source robotics stack."
+4. **The impact (30 s):**
+   > "Perception tells you where things are. Interaction tells you what they are. On low-cost open hardware, in plain Python, with the official OpenArm SDK."
 
-## OpenArm Integration Notes
+---
 
-- The OpenArm CAD and documentation repository is the mechanical source of truth for sim-to-real geometry.
-- The first hardware bridge should stay Python-native, using direct serial or vendor SDK calls where available.
-- ROS and ROS2 remain optional, not required, for the initial control and planning stack.
+## Demo Day Checklist
+
+- Objects: two upright cans (grip at ≈1 Nm) or two boxes; one full, one empty.
+- Table at 72.5 cm, rear edge 5 cm from the torso (as in `workcell.table`); robot's left side clear for the side route.
+- Bins placed at `demo.bins.*`; handover pose clear of people except the volunteer.
+- Hardware e-stop within reach. Rehearse once in `OpenArmSim` first.
