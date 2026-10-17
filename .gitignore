@@ -32,3 +32,7 @@ docker/.env
 
 # Local run outputs
 outputs/
+
+# Leftover openarm_mujoco checkout from feat/scripted_pick_and_place; the code uses
+# the git-ignored third_party/openarm/openarm_mujoco instead.
+third_party/openarm_mujoco/
