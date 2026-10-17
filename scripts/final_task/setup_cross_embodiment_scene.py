@@ -1,8 +1,9 @@
-"""Generate a visual OpenArm-to-UR5e/FR3 cross-embodiment MuJoCo scene.
+"""Generate the OpenArm / UR5e / FR3 cross-embodiment MuJoCo scene.
 
-The scene is intentionally render-only: it combines CAD-backed OpenArm v1,
-UR5e, and FR3 assets but does not claim a shared controller, IK solver, or
-collision model. Demonstrations transfer through named task-space TCP targets.
+The real OpenArm is rendered as a follower of the real arm. The simulation-only UR5e and FR3
+each get a table, two identical-looking cans (different mass), two sorting bins, a hand-over
+marker, a simulated user hand and per-can grasp welds (inactive until the gripper closes).
+The layout comes from ``configs/task_config.yaml`` (``cross_embodiment_demo``).
 """
 
 from __future__ import annotations
@@ -12,8 +13,15 @@ from copy import deepcopy
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+import numpy as np
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.cross_embodiment.layout import DemoLayout, load_layout  # noqa: E402
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MENAGERIE_ROOT = PROJECT_ROOT / "third_party/mujoco_menagerie"
 OPENARM_SCENE = PROJECT_ROOT / "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
 GRIPPER_MODEL = MENAGERIE_ROOT / "robotiq_2f85/2f85.xml"
@@ -33,9 +41,13 @@ BASE_YAW_DEG = {"ur5e": 0.0, "fr3": 0.0}
 # Side-mounted home poses (IK-solved offline for the gripper pinch point): pinch
 # ~0.45 m ahead of the torso at z=0.95, 0.30 m (UR5e) / 0.20 m (FR3) off the
 # station centre, tool z-axis along +x, inside joint limits and free of
-# self/pair collisions.
+# self/pair collisions. Only the working arm's entry is used as given: the parked
+# arm's home is recomputed as the mirror image of the working arm (see
+# _mirror_parked_arm), so each robot looks symmetric about its own torso.
+STATION_Y = {"ur5e": 1.350, "fr3": -1.350}
 HOME_QPOS = {
-    "ur5e_left_": [-1.7238, -4.1067, 2.1065, -1.1414, 0.153, -0.0494],
+    # UR5e: every link stays on its own side of the torso (the old pose reached across it), tool in the grasp orientation.
+    "ur5e_left_": [-1.736, -1.867, -2.1448, -2.278, -0.166, 1.5776],
     "ur5e_right_": [-1.4178, -1.3934, 1.9628, -0.5694, 0.153, 0.0471],
     "fr3_left_": [0.9473, 0.405, 0.1364, -2.4167, -2.0608, 1.6781, -0.6587],
     "fr3_right_": [-0.8082, 0.4155, -0.2734, -2.4213, 2.0892, 1.6339, -1.0493],
@@ -170,8 +182,59 @@ def _add_bimanual_station(worldbody: ET.Element, name: str, center_y: float) -> 
     )
 
 
+def _add_demo_props(root: ET.Element, worldbody: ET.Element, asset: ET.Element, layout: DemoLayout) -> None:
+    """Tables, cans, bins, hand-over markers, user hands and grasp welds for every sim robot."""
+    ET.SubElement(asset, "material", name="demo_table", rgba="0.55 0.42 0.30 1")
+    ET.SubElement(asset, "material", name="demo_can", rgba="0.78 0.80 0.84 1", specular="0.4")
+    ET.SubElement(asset, "material", name="demo_bin_heavy", rgba="0.85 0.25 0.20 1")
+    ET.SubElement(asset, "material", name="demo_bin_light", rgba="0.25 0.70 0.30 1")
+    ET.SubElement(asset, "material", name="demo_hand", rgba="0.95 0.78 0.62 0.9")
+    equality = root.find("equality")
+    if equality is None:
+        equality = ET.SubElement(root, "equality")
+    can, table = layout.can, layout.table
+    for robot in layout.sim_robots:
+        st = layout.stations[robot]
+        ET.SubElement(
+            worldbody, "geom", name=f"{robot}_table_top", type="box",
+            pos=f"{table.center_x_m} {st.y0_m} {table.top_z_m - 0.02}",
+            size=f"{table.half_x_m} {table.half_y_m} 0.02", material="demo_table", friction="1 0.005 0.0001",
+        )
+        for label, (bx, by) in (("heavy", st.bin_heavy_xy_m), ("light", st.bin_light_xy_m)):
+            ET.SubElement(
+                worldbody, "geom", name=f"{robot}_bin_{label}", type="box",
+                pos=f"{bx} {by} {table.top_z_m + 0.002}", size="0.07 0.07 0.002",
+                material=f"demo_bin_{label}", friction="1 0.005 0.0001",
+            )
+        ET.SubElement(
+            worldbody, "site", name=f"{robot}_handover_site", type="sphere", size="0.03",
+            pos=" ".join(f"{v}" for v in st.handover_xyz_m), material="cross_embodiment_marker", group="4",
+        )
+        hand = ET.SubElement(worldbody, "body", name=f"{robot}_user_hand", mocap="true", pos=f"0.95 {st.y0_m} 1.15")
+        ET.SubElement(hand, "geom", type="sphere", size="0.04", material="demo_hand", contype="0", conaffinity="0")
+        for index, (cx, cy) in enumerate(st.cans_xy_m, start=1):
+            body = ET.SubElement(
+                worldbody, "body", name=f"{robot}_can_{index}", pos=f"{cx} {cy} {layout.can_rest_z_m() + 0.001}"
+            )
+            ET.SubElement(body, "freejoint", name=f"{robot}_can_{index}_freejoint")
+            ET.SubElement(
+                body, "geom", name=f"{robot}_can_{index}_geom", type="cylinder",
+                size=f"{can.radius_m} {can.half_height_m}", mass=f"{st.true_mass_kg(index, can)}",
+                material="demo_can", friction=f"{can.friction} 0.005 0.0001",
+            )
+            ET.SubElement(
+                equality, "weld", name=f"{robot}_grasp_can_{index}",
+                body1=f"gripper_{robot}_{st.arm}_base", body2=f"{robot}_can_{index}", active="false",
+            )
+            # The simulated user's hand takes the can in the hand-over variant.
+            ET.SubElement(
+                equality, "weld", name=f"{robot}_hand_can_{index}",
+                body1=f"{robot}_user_hand", body2=f"{robot}_can_{index}", active="false",
+            )
+
+
 def generate_scene() -> Path:
-    """Generate the visual-only OpenArm, dual-UR5e, dual-FR3 comparison scene."""
+    """Generate the OpenArm, dual-UR5e, dual-FR3 scene with the demo props for the sim robots."""
     if not OPENARM_SCENE.is_file():
         raise FileNotFoundError("Generate the physical OpenArm scene before this cross-embodiment scene.")
     ur5e_model = MENAGERIE_ROOT / "universal_robots_ur5e/ur5e.xml"
@@ -217,6 +280,7 @@ def generate_scene() -> Path:
         _attach_gripper(root, robot_body, prefix)
 
     ET.SubElement(asset, "material", name="cross_embodiment_marker", rgba="0.05 0.95 0.95 0.75")
+    _add_demo_props(root, worldbody, asset, load_layout())
     # Canonical task-frame markers. A future adapter maps OpenArm TCP goals to
     # each robot's base frame and solves that robot's own IK.
     for name, position in (
@@ -268,12 +332,56 @@ def _write_home_keyframe(tree: ET.ElementTree) -> None:
             raise ValueError(f"Expected {len(values)} joints for {prefix}, found {len(joints)}")
         for joint, value in zip(joints, values):
             qpos[joint.qposadr[0]] = value
+    data = mujoco.MjData(model)
+    layout = load_layout()
+    for robot in layout.sim_robots:
+        work = layout.stations[robot].arm
+        park = "right" if work == "left" else "left"
+        _mirror_parked_arm(model, data, qpos, robot, work, park)
     root = tree.getroot()
     key_element = root.find("keyframe/key[@name='home']")
     if key_element is None:
         raise ValueError("Scene has no 'home' keyframe.")
     key_element.set("qpos", " ".join(f"{v:.6f}" for v in qpos))
     tree.write(OUTPUT_SCENE, encoding="utf-8", xml_declaration=True)
+
+
+
+def _mirror_parked_arm(model, data, qpos, robot: str, work: str, park: str) -> None:
+    """Set the parked arm's home so its links mirror the working arm's about the robot's torso plane.
+
+    FR3 and UR5e are not exactly mirror-symmetric joint by joint, so the pose is found numerically: least
+    squares on the parked arm's joints, matching every link (and the gripper) to the mirror image of the
+    corresponding link of the working arm. Writes the result into ``qpos`` in place.
+    """
+    import mujoco
+    from scipy.optimize import least_squares
+
+    y_mirror = STATION_Y[robot]
+    joints = [j for j in range(model.njnt) if (model.joint(j).name or "").startswith(f"{robot}_{park}_")]
+    adr = np.array([model.jnt_qposadr[j] for j in joints])
+    lo, hi = model.jnt_range[joints, 0], model.jnt_range[joints, 1]
+    pairs = []
+    for b in range(model.nbody):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, b) or ""
+        for prefix in (f"{robot}_{work}_", f"gripper_{robot}_{work}_"):
+            if name.startswith(prefix):
+                pairs.append((b, model.body(name.replace(f"_{work}_", f"_{park}_", 1)).id))
+    data.qpos[:] = qpos
+    mujoco.mj_kinematics(model, data)
+    targets = np.array([[data.xpos[w][0], 2.0 * y_mirror - data.xpos[w][1], data.xpos[w][2]] for w, _ in pairs])
+
+    def residual(q):
+        data.qpos[adr] = q
+        mujoco.mj_kinematics(model, data)
+        return (np.array([data.xpos[p] for _, p in pairs]) - targets).ravel()
+
+    work_q = np.array([qpos[model.jnt_qposadr[model.joint(model.joint(j).name.replace(f"_{park}_", f"_{work}_", 1)).id]] for j in joints])
+    seeds = [qpos[adr].copy(), np.clip(-work_q, lo, hi), np.clip(work_q, lo, hi), np.clip(np.zeros(len(adr)), lo, hi)]
+    best = min((least_squares(residual, s, bounds=(lo, hi)) for s in seeds), key=lambda r: r.cost)
+    rms = float(np.sqrt(np.mean(best.fun.reshape(-1, 3) ** 2) * 3))
+    print(f"{robot}: parked {park} arm mirrors the {work} arm, link position rms error {rms * 1000:.1f} mm")
+    qpos[adr] = best.x
 
 
 if __name__ == "__main__":

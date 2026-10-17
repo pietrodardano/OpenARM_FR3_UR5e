@@ -22,7 +22,7 @@ except ImportError:
 import numpy as np
 
 # Ensure root directory is in sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from src.vision.hand_tracker_listener import MockHandTrackerStream, EgocentricToRobotMapper
 from src.planning.ompl_planner import BimanualOMPLPlanner
@@ -71,7 +71,7 @@ def main():
     sim_cfg = cfg.get("simulation", {})
 
     # 1. Initialize Simulation Environment
-    mjcf_file = sim_cfg.get("mjcf_path", "configs/bimanual_openarms.xml")
+    mjcf_file = sim_cfg.get("mjcf_path", "configs/legacy/bimanual_openarms.xml")
     env = BimanualMuJoCoEnv(
         xml_path=mjcf_file,
         timestep=sim_cfg.get("sim_timestep", 0.002),

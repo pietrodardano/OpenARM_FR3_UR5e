@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from time import perf_counter
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VENV_BIN = PROJECT_ROOT / ".venv" / "bin"
 VENV_PYTHON = VENV_BIN / "python"
 VENV_MJPYTHON = VENV_BIN / "mjpython"
@@ -272,7 +272,7 @@ def main() -> None:
     if args.show and args.trials != 1:
         parser.error("--show supports exactly one trial; run robustness mode without --show.")
     if not SCENE_PATH.exists():
-        raise FileNotFoundError("Generate the physical scene first with scripts/setup_openarm_v1_scene.py.")
+        raise FileNotFoundError("Generate the physical scene first with scripts/setup/setup_openarm_v1_scene.py.")
     if args.trials > 1:
         run_robustness_trials(args.trials, args.seed)
         return

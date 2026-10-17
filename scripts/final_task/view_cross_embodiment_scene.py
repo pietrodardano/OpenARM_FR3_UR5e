@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 VENV_MJPYTHON = PROJECT_ROOT / ".venv" / "bin" / "mjpython"
 SCENE_PATH = PROJECT_ROOT / "third_party/mujoco_menagerie/cross_embodiment_openarm_ur5e_fr3.xml"
 
@@ -32,7 +32,7 @@ def main() -> None:
     _ensure_macos_gui_interpreter()
     if not SCENE_PATH.is_file():
         raise FileNotFoundError(
-            f"Comparison scene not found: {SCENE_PATH}. Run scripts/setup_cross_embodiment_scene.py first."
+            f"Comparison scene not found: {SCENE_PATH}. Run scripts/final_task/setup_cross_embodiment_scene.py first."
         )
 
     import mujoco

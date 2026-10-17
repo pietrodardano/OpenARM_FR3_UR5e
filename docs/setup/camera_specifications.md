@@ -1,5 +1,7 @@
 # HBV HD CAMERA (DaiDai Lab Egocentric Vision Device)
 
+> **Status: setup.** How the environment, workcell and hardware were brought up. Still valid reference, but not the final task itself.
+
 ## 1. Hardware Identification & System Profile
 
 Extracted directly via macOS hardware subsystem (`system_profiler SPCameraDataType` & `AVFoundation` backend):

@@ -11,7 +11,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 OFFICIAL_MODEL = (
     PROJECT_ROOT / "third_party/openarm/openarm_mujoco/v1/openarm_bimanual.xml"
 )
@@ -191,7 +191,7 @@ def generate_scene(
     if not source_model.is_file():
         raise FileNotFoundError(
             "Official OpenArm v1 model not found. Clone the sources described in "
-            "docs/openarm_v1_environment.md before generating this scene: "
+            "docs/setup/openarm_v1_environment.md before generating this scene: "
             f"{source_model}"
         )
 

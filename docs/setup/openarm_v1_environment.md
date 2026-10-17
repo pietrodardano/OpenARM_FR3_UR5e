@@ -1,5 +1,7 @@
 # OpenArm v1 Development Environment
 
+> **Status: setup.** How the environment, workcell and hardware were brought up. Still valid reference, but not the final task itself.
+
 This project uses a ROS-free Python simulation/planning stack and the official OpenArm v1 parallel-link model.
 
 ## Scope
@@ -71,7 +73,7 @@ Expected result: the OpenArm v1 bimanual scene loads with 16 actuators: 7 arm ac
 uv run python -m mujoco.viewer --mjcf=third_party/openarm/openarm_mujoco/v1/openarm_bimanual.xml
 ```
 
-This is the authoritative simulator model for this project. Do not use `configs/bimanual_openarms.xml` for hardware geometry; it is a 5-DOF placeholder.
+This is the authoritative simulator model for this project. Do not use `configs/legacy/bimanual_openarms.xml` for hardware geometry; it is a 5-DOF placeholder.
 
 ## Run the Current Project Tests
 

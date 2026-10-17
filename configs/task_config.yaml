@@ -59,7 +59,7 @@ safety:
 
 # Simulation & Execution Rates
 simulation:
-  # Generated from the official v1 model by scripts/setup_openarm_v1_scene.py.
+  # Generated from the official v1 model by scripts/setup/setup_openarm_v1_scene.py.
   # It remains Git-ignored with the official OpenArm source checkout.
   mjcf_path: "third_party/openarm/openarm_mujoco/v1/openarm_bimanual_physical_scene.xml"
   cross_embodiment_mjcf_path: "third_party/mujoco_menagerie/cross_embodiment_openarm_ur5e_fr3.xml"
@@ -100,3 +100,53 @@ cross_embodiment:
     - "UR5e, 6 DOF per arm"
     - "Franka FR3, 7 DOF per arm"
   transfer_representation: "Canonical task-frame TCP pose targets; never direct joint-angle transfer."
+
+# Arm enablement. Only the left arm is operable on the real robot. The right arm has a known
+# hardware problem and stays disabled; its settings are kept for when it is fixed (see agents.md rule 6).
+hardware:
+  left:
+    enabled: true
+  right:
+    enabled: false  # known hardware problem; do not enable until re-verified
+
+# Cross-embodiment demo (simulation only): FR3 and UR5e run the same weigh-by-touch task as the real
+# OpenArm, each on its own table with its own cans. They may "cheat": object positions come straight
+# from this config, not from vision. Every robot works with its LEFT arm, like the real OpenArm, and each
+# station is laid out the same way relative to that arm; the other arm is parked as its mirror image.
+cross_embodiment_demo:
+  sim_robots: [ur5e, fr3]
+  control_dt_s: 0.01          # task/control tick; physics timestep comes from the scene (0.001 s)
+  can:                        # two identical-looking cans; only the mass differs
+    radius_m: 0.033
+    half_height_m: 0.06
+    empty_kg: 0.06
+    full_kg: 0.36
+    friction: 1.2
+  table:
+    center_x_m: 0.50
+    half_x_m: 0.30
+    half_y_m: 0.32
+    top_z_m: 0.74
+  grasp:
+    approach_clearance_m: 0.12   # pre-grasp stand-off along the approach direction (+x)
+    lift_height_m: 0.16
+    max_joint_speed_rad_s: 0.8
+    settle_s: 1.0
+    weigh_window_s: 1.0
+  stations:                   # world frame; y0 is the table centre line. Same layout relative to each left arm:
+    ur5e:                     # (FR3 left arm base at y = -1.32, UR5e left arm base at y = +1.38)
+      arm: left
+      y0_m: 1.55
+      cans_xy_m: [[0.50, 1.48], [0.45, 1.62]]
+      full_can: 1             # which can is full (1 or 2)
+      bins_xy_m: {heavy: [0.50, 1.37], light: [0.50, 1.73]}
+      handover_xyz_m: [0.42, 1.55, 1.15]
+      ending: handover        # sort | handover
+    fr3:
+      arm: left
+      y0_m: -1.15
+      cans_xy_m: [[0.50, -1.22], [0.45, -1.08]]
+      full_can: 2
+      bins_xy_m: {heavy: [0.50, -1.33], light: [0.50, -0.97]}
+      handover_xyz_m: [0.42, -1.15, 1.15]
+      ending: sort

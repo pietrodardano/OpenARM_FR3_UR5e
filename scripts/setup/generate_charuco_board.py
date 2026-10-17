@@ -85,7 +85,8 @@ def generate_charuco_a4(
 
 
 if __name__ == "__main__":
-    out_dir = "/Users/Q682676/Documents/RoboTokens/configs"
+    # Boards are written next to the other configs, relative to the repository root.
+    out_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "configs"))
     os.makedirs(out_dir, exist_ok=True)
 
     # 1. 5x7 with 38 mm squares, 28 mm markers (Full A4 coverage)
