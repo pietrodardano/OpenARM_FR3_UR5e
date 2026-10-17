@@ -1,0 +1,59 @@
+# Task Configuration for DaiDai Lab Egocentric Vision -> RBS / MuJoCo OpenArms
+
+task:
+  name: "daidai_bimanual_openarms_teleop"
+  version: "1.0.0"
+  description: "Egocentric hand tracking teleoperation and motion planning for bimanual OpenArms"
+
+# Vision & Egocentric Stream Parameters
+vision:
+  source: "mock" # options: "mock", "daidai_stream", "realsense", "zed"
+  stream_uri: "tcp://127.0.0.1:5555"
+  fps: 30
+  confidence_threshold: 0.65
+  smoothing:
+    filter_type: "exponential" # "exponential" or "butterworth"
+    alpha: 0.75 # Lower = smoother, higher = more responsive
+  
+  # Coordinate Mapping (Human Egocentric -> Robot Base Frame)
+  mapping:
+    # Scale from human hand motion (meters) to robot workspace
+    scale_factor: 1.2
+    # Coordinate system mapping: [x_rob, y_rob, z_rob] from [x_cam, y_cam, z_cam]
+    # Standard: Camera (X: right, Y: down, Z: forward) -> Robot (X: fwd, Y: left, Z: up)
+    axis_permutation: [2, 0, 1]  # x_rob = z_cam, y_rob = -x_cam, z_rob = -y_cam
+    axis_signs: [1.0, -1.0, -1.0]
+    # Calibration nominal offsets in robot base frame (meters)
+    left_nominal_offset: [0.35, 0.18, 0.55]
+    right_nominal_offset: [0.35, -0.18, 0.55]
+
+# Planning Parameters (RobotBlockSet & OMPL)
+planning:
+  planner_type: "RRTConnect" # RRTConnect, BKPIECE1, PRM, BiTRRT
+  max_planning_time_sec: 0.15
+  collision_clearance: 0.015 # meters
+  interpolation_steps: 25
+  goal_tolerance_cartesian: 0.01 # 1 cm
+  goal_tolerance_orientation: 0.05 # radians
+  asynchronous_replanning: true
+  min_cartesian_delta_for_replan: 0.03 # 3 cm trigger
+
+# Robot Safety & Kinematic Limits
+safety:
+  cartesian_bounds:
+    x_min: 0.15
+    x_max: 0.55
+    y_min: -0.45
+    y_max: 0.45
+    z_min: 0.38 # Above table surface
+    z_max: 0.75
+  max_joint_velocity_rad_s: 2.5
+  max_cartesian_velocity_m_s: 0.6
+  min_bimanual_ee_distance: 0.08 # Minimum distance between left and right end-effectors (meters)
+
+# Simulation & Execution Rates
+simulation:
+  mjcf_path: "configs/bimanual_openarms.xml"
+  sim_timestep: 0.002 # 500 Hz
+  control_decimation: 5 # 100 Hz control loop
+  render: false # default headless, set true for interactive viewer
