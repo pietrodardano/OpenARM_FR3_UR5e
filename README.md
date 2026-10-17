@@ -80,6 +80,18 @@ uv sync --extra rbs --extra dev
 
 For the official OpenArm v1 sources, the parallel-link MuJoCo scene, validation, rendering, and hardware boundary, follow [docs/openarm_v1_environment.md](docs/openarm_v1_environment.md).
 
+### Real OpenArm Deployment (Linux PC, container)
+Joint position and IK control of the physical bimanual OpenArm, in plain Python (one streaming thread over the official `openarm_can` SDK, no ROS), with a MuJoCo backend exposing the same API for dry runs:
+
+```bash
+docker/dev.sh build && docker/dev.sh shell        # rootful Docker on the robot PC (SocketCAN)
+scripts/setup_can.sh && python scripts/check_robot.py
+python scripts/run_control_demo.py --backend sim --controller ik --render
+python scripts/run_control_demo.py --backend real --controller joint --amplitude 0.3
+```
+
+See [docs/real_robot_deployment.md](docs/real_robot_deployment.md) for the interface, safety behaviour and bring-up checklist.
+
 ---
 
 ## 4. Running the Pipeline
