@@ -6,6 +6,7 @@ Scripted demo in the sandbox: one arm reaches the dispenser lever tip and presse
     python scripts/run_lever_demo.py --render            # MuJoCo viewer, real time
     python scripts/run_lever_demo.py --snapshots outputs/lever   # PNG per phase (headless)
     python scripts/run_lever_demo.py --side right
+    python scripts/run_lever_demo.py --render --loop 0   # keep pressing until the window is closed
 
 Uses the same stack as the real robot: OpenArmSim (same API as the hardware driver, safety
 filter in the loop) + IKController (move_l on the official model). The lever tip position
@@ -27,6 +28,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -86,6 +88,7 @@ def main() -> int:
     parser.add_argument("--render", action="store_true", help="MuJoCo viewer (real time)")
     parser.add_argument("--snapshots", type=Path, help="directory for one PNG per phase")
     parser.add_argument("--speed", type=float, default=0.25, help="average TCP speed per move (m/s)")
+    parser.add_argument("--loop", type=int, default=1, help="press cycles to run (0 = until the viewer is closed)")
     parser.add_argument("--rebuild", action="store_true", help="regenerate the sandbox scene first")
     parser.add_argument("--config", default="configs/task_config.yaml")
     args = parser.parse_args()
@@ -134,9 +137,11 @@ def main() -> int:
             wait_until(lambda: np.linalg.norm(ik.get_tcp_pose()[side][0] - p) < ARRIVE_TOL_M, timeout=1.5)
         return err
 
+    def viewer_open() -> bool:
+        return robot._viewer is not None and robot._viewer.is_running()
+
     robot.start()
     snap = Snapshots(robot, args.snapshots)
-    t_start = d.time
     try:
         ik.reset()
         # Scene world -> IK base frame: the sandbox lifts the official robot root (no rotation).
@@ -153,33 +158,49 @@ def main() -> int:
         approach = above + np.array([-APPROACH_BACK_M, 0.0, APPROACH_UP_M])
         # Come in high and from the robot's side, then drop onto the tip: a direct line from home
         # passes close to the spigot, and at speed the arm's real path bows into it.
-        move(approach, R_home, gripper_m={side: 0.0})
-        err = move(above, R_home)
-        reached = ik.get_tcp_pose()[side][0]
-        print(f"above the tip: IK error {err[side] * 1e3:.1f} mm, measured TCP error {np.linalg.norm(reached - above) * 1e3:.1f} mm")
-        snap("1_above")
+        def press_cycle() -> bool:
+            t_start = d.time
+            move(approach, R_home, gripper_m={side: 0.0})
+            err = move(above, R_home)
+            reached = ik.get_tcp_pose()[side][0]
+            print(f"above the tip: IK error {err[side] * 1e3:.1f} mm, measured TCP error {np.linalg.norm(reached - above) * 1e3:.1f} mm")
+            snap("1_above")
 
-        move(press, R_home, arrive=False)  # the lever stops the fingers above this target
-        waited = wait_until(lambda: lever() > LEVER_DISPENSING_RAD, timeout=1.0)
-        pressed = lever()
-        reached = ik.get_tcp_pose()[side][0]
-        print(f"pressed: lever {pressed:+.3f} rad ({np.degrees(pressed):.1f} deg) after {waited:.2f} s extra, "
-              f"TCP z {reached[2]:.3f} (tip was {tip[2]:.3f})")
-        print(f"         touching the lever: {lever_contacts(m, d)}")
-        snap("2_pressed")
+            move(press, R_home, arrive=False)  # the lever stops the fingers above this target
+            waited = wait_until(lambda: lever() > LEVER_DISPENSING_RAD, timeout=1.0)
+            pressed = lever()
+            reached = ik.get_tcp_pose()[side][0]
+            print(f"pressed: lever {pressed:+.3f} rad ({np.degrees(pressed):.1f} deg) after {waited:.2f} s extra, "
+                  f"TCP z {reached[2]:.3f} (tip was {tip[2]:.3f})")
+            print(f"         touching the lever: {lever_contacts(m, d)}")
+            snap("2_pressed")
 
-        move(above, R_home)
-        waited = wait_until(lambda: lever() < 0.03, timeout=1.0)
-        released = lever()
-        print(f"released: lever {released:+.3f} rad after {waited:.2f} s extra")
-        snap("3_released")
+            move(above, R_home)
+            waited = wait_until(lambda: lever() < 0.03, timeout=1.0)
+            released = lever()
+            print(f"released: lever {released:+.3f} rad after {waited:.2f} s extra")
+            snap("3_released")
 
-        move(approach, R_home, arrive=False)
-        move(p_home, R_home)
-        snap("4_home")
-        print(f"sequence took {d.time - t_start:.1f} s (sim time)")
-        ok = pressed > LEVER_DISPENSING_RAD and released < 0.03
+            move(approach, R_home, arrive=False)
+            move(p_home, R_home)
+            snap("4_home")
+            print(f"sequence took {d.time - t_start:.1f} s (sim time)")
+            return pressed > LEVER_DISPENSING_RAD and released < 0.03
+
+        ok = True
+        cycle = 0
+        while args.loop == 0 or cycle < args.loop:
+            cycle += 1
+            if args.loop != 1:
+                print(f"--- cycle {cycle}")
+            ok &= press_cycle()
+            if args.loop == 0 and not (args.render and viewer_open()):
+                break
         print("RESULT:", "lever pressed and released" if ok else "lever NOT actuated as expected")
+        if args.render and viewer_open():
+            print("Holding at home. Close the viewer window (or Ctrl+C) to exit.")
+            while viewer_open():
+                time.sleep(0.1)
         return 0 if ok else 1
     finally:
         robot.stop()
