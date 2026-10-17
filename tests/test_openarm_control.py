@@ -18,7 +18,7 @@ import yaml
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.control.robot_interface import CMD_DIM, SIDES, JointLimits, arm_slice, gripper_index
+from src.control.robot_interface import CMD_DIM, SIDES, JointLimits, TargetInterpolator, arm_slice, gripper_index
 from src.control.safety import JointSafetyFilter
 
 REPO = Path(__file__).resolve().parents[1]
@@ -68,9 +68,26 @@ class TestSafetyFilter(unittest.TestCase):
         np.testing.assert_allclose(f.step(q, 0.01), q)
 
 
+class TestTargetInterpolator(unittest.TestCase):
+    def test_streamed_targets_are_spread_over_the_period(self):
+        it = TargetInterpolator(max_period=0.1)
+        it.reset(np.zeros(CMD_DIM), now=0.0)
+        it.set_goal(np.full(CMD_DIM, 1.0), now=1.0)  # after a pause: passes as a step
+        np.testing.assert_allclose(it.value(1.0), 1.0)
+        it.set_goal(np.full(CMD_DIM, 2.0), now=1.02)  # streaming at 50 Hz: period 20 ms
+        np.testing.assert_allclose(it.value(1.02), 1.0)
+        np.testing.assert_allclose(it.value(1.03), 1.5)
+        np.testing.assert_allclose(it.value(1.05), 2.0)  # holds the goal after one period
+        it.set_goal(np.full(CMD_DIM, 3.0), now=1.04)  # next target mid-way: continues from where it is
+        np.testing.assert_allclose(it.value(1.04), 2.0)
+        self.assertGreater(it.value(1.05)[0], 2.0)
+        it.set_entry(0, -1.0)  # override (torque-mode gripper): immediate, no interpolation
+        self.assertEqual(it.value(1.05)[0], -1.0)
+
+
 @unittest.skipUnless(HAS_MODEL, "official OpenArm sources not in third_party/openarm")
 class TestHardwareDriverWithFakeBus(unittest.TestCase):
-    def _make(self, q0=None):
+    def _make(self, q0=None, active_sides=("left", "right")):
         from src.hardware import FakeOpenArmBus, OpenArmBimanual
 
         self.buses = {}
@@ -83,7 +100,84 @@ class TestHardwareDriverWithFakeBus(unittest.TestCase):
 
         cfg = yaml.safe_load(open(REPO / "configs/task_config.yaml"))
         cfg["hardware"]["rest_duration_s"] = 0.5
+        cfg["hardware"]["active_sides"] = list(active_sides)
         return OpenArmBimanual.from_config(cfg, bus_factory=factory)
+
+    def test_left_only_never_touches_right_bus(self):
+        q0 = {"left": np.array([0.1, -0.2, 0.0, 0.3, 0.0, 0.0, 0.0]), "right": np.zeros(7)}
+        robot = self._make(q0, active_sides=("left",))
+        self.assertEqual(set(self.buses), {"left"})
+        robot.start()
+        try:
+            time.sleep(0.05)
+            state = robot.get_state()
+            self.assertIsNone(state.fault)
+            self.assertTrue(state.arms["left"].active)
+            self.assertFalse(state.arms["right"].active)
+            np.testing.assert_allclose(state.arms["right"].q, CFG["hardware"]["rest_qpos"]["right"])
+            goal = state.command_vector()
+            goal[arm_slice("left")][3] = 0.4
+            goal[arm_slice("right")][3] = 1.0  # ignored: right arm inactive
+            robot.set_target(goal)
+            time.sleep(0.3)
+            state = robot.get_state()
+            self.assertAlmostEqual(state.arms["left"].q_setpoint[3], 0.4, places=6)
+            np.testing.assert_allclose(state.arms["right"].q_setpoint, CFG["hardware"]["rest_qpos"]["right"])
+            with self.assertRaises(ValueError):
+                robot.set_gripper_torque({"right": 0.2})
+        finally:
+            robot.stop()
+        self.assertFalse(self.buses["left"].enabled)
+
+    def test_gripper_torque_mode_ramps_and_returns_bumpless(self):
+        q0 = {"left": np.array([0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0]), "right": np.zeros(7)}
+        robot = self._make(q0, active_sides=("left",))
+        robot.start()
+        try:
+            bus = self.buses["left"]
+            robot.set_joint_targets(gripper={"left": 0.03})
+            time.sleep(1.6)  # opening at 22 mm/s
+            bus.gripper_block_at = -0.5  # an object stops the fingers at ~21 mm
+            robot.set_gripper_torque({"left": 0.5})
+            time.sleep(0.05)
+            cmd = bus.last_command
+            self.assertEqual(cmd["gripper_kp"], 0.0)  # pure torque (current) control
+            self.assertGreater(cmd["gripper_tau_ff"], 0.0)  # motor sign of closing: + (open is -1.0472 rad)
+            self.assertLess(cmd["gripper_tau_ff"], 0.45)  # still ramping (4 Nm/s)
+            time.sleep(0.8)
+            arm = robot.get_state().arms["left"]
+            self.assertAlmostEqual(arm.gripper_torque_cmd, 0.5, places=6)
+            self.assertAlmostEqual(arm.gripper_tau, 0.5, places=6)
+            self.assertAlmostEqual(arm.gripper, 0.5 / 1.0472 * 0.044, places=4)  # held by the object
+            robot.set_joint_targets(gripper={"left": 0.0})  # ignored while in torque mode
+            robot.set_gripper_torque({"left": None})
+            time.sleep(0.1)
+            arm = robot.get_state().arms["left"]
+            self.assertIsNone(arm.gripper_torque_cmd)
+            self.assertEqual(bus.last_command["gripper_kp"], CFG["hardware"]["gripper"]["kp"])
+            self.assertAlmostEqual(arm.gripper_setpoint, arm.gripper, places=4)  # holds where it is
+        finally:
+            robot.stop()
+
+    def test_grip_approaches_fast_then_holds_grip_torque(self):
+        from scripts.grip_torque_test import grip
+
+        q0 = {"left": np.array([0.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.0]), "right": np.zeros(7)}
+        robot = self._make(q0, active_sides=("left",))
+        robot.start()
+        try:
+            bus = self.buses["left"]
+            bus.gripper_rad_s_per_nm = 0.5  # sluggish fingers: 0.1 Nm alone would take ~20 s
+            robot.set_joint_targets(gripper={"left": 0.044})
+            time.sleep(2.2)
+            bus.gripper_block_at = -0.5  # object at ~21 mm
+            t0 = time.monotonic()
+            g = grip(robot, "left", 0.1, CFG)
+            self.assertLess(time.monotonic() - t0, 4.0)
+            self.assertAlmostEqual(g, 0.5 / 1.0472 * 0.044, places=3)
+            self.assertAlmostEqual(robot.get_state().arms["left"].gripper_torque_cmd, 0.1, places=6)
+        finally:
+            robot.stop()
 
     def test_start_holds_measured_pose_then_tracks(self):
         q0 = {"left": np.array([0.1, -0.2, 0.0, 0.3, 0.0, 0.0, 0.0]), "right": np.array([-0.1, 0.2, 0.0, 0.3, 0.0, 0.0, 0.0])}
@@ -145,9 +239,11 @@ class TestControllersInSim(unittest.TestCase):
         from src.control.ik_controller import IKController
         from src.simulation.openarm_sim import OpenArmSim
 
-        cls.robot = OpenArmSim.from_config(CFG)
+        cfg = yaml.safe_load(open(REPO / "configs/task_config.yaml"))
+        cfg["hardware"]["active_sides"] = list(SIDES)  # bimanual controller tests
+        cls.robot = OpenArmSim.from_config(cfg)
         cls.robot.start()
-        cls.ik = IKController.from_config(CFG, cls.robot)
+        cls.ik = IKController.from_config(cfg, cls.robot)
         cls.home = {s: np.asarray(CFG["robot"]["home_qpos"][s]) for s in SIDES}
 
     @classmethod
@@ -204,3 +300,62 @@ class TestControllersInSim(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(HAS_MODEL, "official OpenArm sources not in third_party/openarm")
+class TestPayloadAndGripperTorqueInSim(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from src.planning.openarm_kinematics import OpenArmKinematics
+        from src.simulation.openarm_sim import OpenArmSim
+
+        cfg = yaml.safe_load(open(REPO / "configs/task_config.yaml"))
+        cfg["hardware"]["active_sides"] = ["left"]
+        cls.robot = OpenArmSim.from_config(cfg)
+        cls.robot.start()
+        cls.kin = OpenArmKinematics(cfg["robot"]["mjcf_path"])
+        cls.robot.move_joints({"left": np.asarray(cfg["robot"]["home_qpos"]["left"])},
+                              gripper={"left": 0.03}, duration=2.0)
+        cls.robot.advance(1.0)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.robot.stop()
+
+    def test_inactive_arm_ignores_targets(self):
+        self.robot.set_joint_targets({"right": np.full(7, 0.3)})
+        self.robot.advance(0.2)
+        np.testing.assert_allclose(self.robot.get_state().arms["right"].q_setpoint, 0.0)
+
+    def test_gripper_torque_closes_and_releases_in_place(self):
+        self.robot.set_gripper_torque({"left": 0.3})
+        self.robot.advance(1.5)
+        arm = self.robot.get_state().arms["left"]
+        self.assertLess(arm.gripper, 0.002)  # nothing in between: closes fully
+        self.assertAlmostEqual(arm.gripper_torque_cmd, 0.3)
+        self.robot.set_gripper_torque({"left": None})
+        self.robot.advance(0.5)
+        arm = self.robot.get_state().arms["left"]
+        self.assertIsNone(arm.gripper_torque_cmd)
+        self.assertLess(arm.gripper, 0.002)  # stays where it was
+        self.robot.set_joint_targets(gripper={"left": 0.03})
+        self.robot.advance(2.0)
+
+    def test_heavier_load_is_detected(self):
+        from src.estimation.payload import compare, measure_load
+
+        robot, hand = self.robot, self.robot.model.body("openarm_left_hand").id
+        kw = dict(amplitude_deg=1.0, period_s=1.0, cycles=2)
+        light = measure_load(robot, self.kin, "left", "light", **kw)
+        robot.data.xfrc_applied[hand, 2] = -0.3 * 9.81  # 300 g hanging on the hand
+        try:
+            robot.advance(0.5)
+            heavy = measure_load(robot, self.kin, "left", "heavy", **kw)
+        finally:
+            robot.data.xfrc_applied[hand, :] = 0.0
+        self.assertEqual(light.joints, [0, 3, 6])  # shoulder pitch, elbow, wrist pitch
+        self.assertLess(abs(light.mass), 0.05)  # sim torques match the model
+        c = compare(light, heavy)
+        self.assertEqual(c.heavier.label, "heavy")
+        self.assertGreater(c.diff_kg, 0.2)  # the hand body sits a bit inboard of the TCP
+        self.assertLess(c.diff_kg, 0.35)

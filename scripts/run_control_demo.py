@@ -72,7 +72,7 @@ def ik_demo(robot: RobotBackend, ik: IKController, amplitude: float) -> None:
     print(f"  last IK position error: {', '.join(f'{s} {e * 1e3:.2f} mm' for s, e in err.items())}")
     meas = ik.get_tcp_pose()
     print("  measured TCP - commanded: " + ", ".join(
-        f"{s} {np.linalg.norm(meas[s][0] - ik.pose_cmd[s][0]) * 1e3:.1f} mm" for s in SIDES))
+        f"{s} {np.linalg.norm(meas[s][0] - ik.pose_cmd[s][0]) * 1e3:.1f} mm" for s in robot.active_sides))
     ik.move_l(start, duration=2.0)
     gripper_cycle(robot, lambda g: ik.joints.command(gripper_m={s: g for s in SIDES}))
 
@@ -82,7 +82,7 @@ def gripper_cycle(robot: RobotBackend, send) -> None:
         send(g)
         robot.advance(2.5)  # full stroke takes 2 s at max_gripper_velocity
         print(f"  gripper -> {g * 1000:.0f} mm, measured " + ", ".join(
-            f"{s} {robot.get_state().arms[s].gripper * 1000:.1f} mm" for s in SIDES))
+            f"{s} {robot.get_state().arms[s].gripper * 1000:.1f} mm" for s in robot.active_sides))
 
 
 def main() -> None:

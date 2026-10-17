@@ -39,7 +39,7 @@ import yaml
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.control.joint_position_controller import JointPositionController  # noqa: E402
-from src.control.robot_interface import GRIPPER_OPEN_M, SIDES, RobotBackend, Side  # noqa: E402
+from src.control.robot_interface import GRIPPER_OPEN_M, RobotBackend, Side  # noqa: E402
 from scripts.jog_joints import confirm, make_robot  # noqa: E402
 from scripts.safe_zero import run_with_zero  # noqa: E402
 
@@ -108,7 +108,7 @@ def main() -> int:
         st = robot.get_state()
         print("Gripper command = absolute finger slide in m (0 = closed, 0.044 = open), "
               f"rate limit {v_max * 1e3:.0f} mm/s, motor 0 .. {motor_open_rad:+.4f} rad")
-        for s in SIDES:
+        for s in robot.active_sides:
             print(f"  {s:>5}: measured {st.arms[s].gripper * 1e3:5.1f} mm "
                   f"({st.arms[s].gripper / GRIPPER_OPEN_M * 100:.0f} %)")
         jc = JointPositionController(robot)
@@ -119,7 +119,8 @@ def main() -> int:
             (f"[3/3] Right gripper: open to {open_m * 1e3:.0f} mm, then close", [("right", open_m), ("right", 0.0)]),
         ]
         for title, moves in steps:
-            if not confirm(f"\n{title}?", args.yes):
+            moves = [(side, goal) for side, goal in moves if side in robot.active_sides]
+            if not moves or not confirm(f"\n{title}?", args.yes):
                 continue
             for side, goal in moves:
                 move_gripper(robot, jc, side, goal, v_max, motor_open_rad, settle_s=args.hold)

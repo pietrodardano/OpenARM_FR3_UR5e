@@ -46,6 +46,8 @@ class BusReading:
     dq: NDArray[np.float64]  # (7,) rad/s
     tau: NDArray[np.float64]  # (7,) Nm
     gripper_q: float  # gripper motor angle, rad
+    gripper_dq: float = 0.0  # gripper motor velocity, rad/s
+    gripper_tau: float = 0.0  # gripper motor torque (from phase current), Nm, motor sign
     error_codes: List[int] = field(default_factory=list)  # 8 raw status nibbles (7 arm + gripper)
     responses: List[int] = field(default_factory=list)  # 8 cumulative reply counters
     bus_healthy: bool = True
@@ -100,13 +102,20 @@ class OpenArmBus:
         gripper_q: float,
         gripper_kp: float,
         gripper_kd: float,
+        gripper_tau_ff: float = 0.0,
     ) -> None:
-        """Sends one MIT frame per motor: tau = kp (q - q_meas) - kd dq_meas + tau_ff."""
+        """Sends one MIT frame per motor: tau = kp (q - q_meas) - kd dq_meas + tau_ff.
+
+        With ``gripper_kp = 0`` the gripper motor is in pure torque (current) control:
+        it outputs ``gripper_tau_ff - gripper_kd * dq``.
+        """
         mit = self._oa.MITParam
         self._dev.get_arm().mit_control_all(
             [mit(float(kp[i]), float(kd[i]), float(q[i]), 0.0, float(tau_ff[i])) for i in range(ARM_MOTORS)]
         )
-        self._dev.get_gripper().mit_control_all([mit(float(gripper_kp), float(gripper_kd), float(gripper_q), 0.0, 0.0)])
+        self._dev.get_gripper().mit_control_all(
+            [mit(float(gripper_kp), float(gripper_kd), float(gripper_q), 0.0, float(gripper_tau_ff))]
+        )
 
     def receive(self, timeout_us: int) -> BusReading:
         """Drains replies (waits up to ``timeout_us`` for the first) and returns the latest state."""
@@ -119,6 +128,8 @@ class OpenArmBus:
             dq=np.array([m.get_velocity() for m in motors]),
             tau=np.array([m.get_torque() for m in motors]),
             gripper_q=float(gmotor.get_position()),
+            gripper_dq=float(gmotor.get_velocity()),
+            gripper_tau=float(gmotor.get_torque()),
             error_codes=[int(m.get_error_code()) for m in motors] + [int(gmotor.get_error_code())],
             responses=[int(arm.get_link_stats(i).responses) for i in range(ARM_MOTORS)]
             + [int(grip.get_link_stats(0).responses)],
@@ -149,6 +160,12 @@ class FakeOpenArmBus:
         self.q = np.zeros(ARM_MOTORS) if q0 is None else np.array(q0, dtype=np.float64)
         self.dq = np.zeros(ARM_MOTORS)
         self.gripper_q = gripper_q0
+        self.gripper_dq = 0.0
+        self.gripper_tau = 0.0
+        # Torque mode: the fake motor moves at this speed per Nm until it hits a stop.
+        self.gripper_rad_s_per_nm = 2.0
+        self.gripper_range = (-1.0472, 0.0)  # motor angle at full open .. closed
+        self.gripper_block_at: Optional[float] = None  # motor angle of a grasped object (stops closing)
         self.alpha = min(1.0, dt / tau_s)
         self.dt = dt
         self.enabled = False
@@ -172,14 +189,24 @@ class FakeOpenArmBus:
         self._count_replies()
         return self.receive(timeout_us)
 
-    def command(self, q, kp, kd, tau_ff, gripper_q, gripper_kp, gripper_kd) -> None:  # noqa: D102
-        self.last_command = dict(q=np.array(q), kp=np.array(kp), kd=np.array(kd), tau_ff=np.array(tau_ff), gripper_q=gripper_q)
+    def command(self, q, kp, kd, tau_ff, gripper_q, gripper_kp, gripper_kd, gripper_tau_ff=0.0) -> None:  # noqa: D102
+        self.last_command = dict(q=np.array(q), kp=np.array(kp), kd=np.array(kd), tau_ff=np.array(tau_ff),
+                                 gripper_q=gripper_q, gripper_kp=gripper_kp, gripper_tau_ff=gripper_tau_ff)
         if not self.enabled:
             return
         q_prev = self.q.copy()
         self.q = self.q + self.alpha * (np.asarray(q) - self.q)
         self.dq = (self.q - q_prev) / self.dt
-        self.gripper_q += self.alpha * (gripper_q - self.gripper_q)
+        g_prev = self.gripper_q
+        if gripper_kp > 0:
+            self.gripper_q += self.alpha * (gripper_q - self.gripper_q)
+            self.gripper_tau = gripper_kp * (gripper_q - self.gripper_q)
+        else:  # torque mode: move with the torque until a stop or the grasped object
+            hi = self.gripper_range[1] if self.gripper_block_at is None else self.gripper_block_at
+            self.gripper_q = float(np.clip(self.gripper_q + self.gripper_rad_s_per_nm * gripper_tau_ff * self.dt,
+                                           self.gripper_range[0], hi))
+            self.gripper_tau = gripper_tau_ff
+        self.gripper_dq = (self.gripper_q - g_prev) / self.dt
         self._count_replies()
 
     def _count_replies(self) -> None:
@@ -192,6 +219,8 @@ class FakeOpenArmBus:
             dq=self.dq.copy(),
             tau=np.zeros(ARM_MOTORS),
             gripper_q=self.gripper_q,
+            gripper_dq=self.gripper_dq,
+            gripper_tau=self.gripper_tau,
             error_codes=list(self.error_codes),
             responses=list(self.responses),
             bus_healthy=True,

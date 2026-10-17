@@ -16,6 +16,11 @@ Two modes:
 
 The 16 position actuators of ``openarm_bimanual.xml`` are ordered exactly like
 the 16-dim command vector, so a setpoint maps 1:1 onto ``data.ctrl``.
+
+Like the driver, only ``active_sides`` follow targets (the other arm holds its
+initial pose), and grippers have a torque mode: the finger position actuator is
+switched to pure damping and the motor torque is applied as a finger force
+through the linear opening/motor-angle map used by the driver.
 """
 
 from __future__ import annotations
@@ -32,12 +37,14 @@ from numpy.typing import NDArray
 from ..control.robot_interface import (
     ARM_DOF,
     CMD_DIM,
+    GRIPPER_OPEN_M,
     SIDES,
     ArmState,
     JointLimits,
     RobotBackend,
     RobotState,
     Side,
+    TargetInterpolator,
     arm_slice,
     gripper_index,
     pack_command,
@@ -76,6 +83,11 @@ class OpenArmSim(RobotBackend):
         joint_limit_margin: float = 0.02,
         initial_qpos: Optional[Mapping[Side, Sequence[float]]] = None,
         gravity_compensation_scale: float = 1.0,
+        active_sides: Sequence[Side] = SIDES,
+        gripper_motor_open_rad: float = -1.0472,
+        gripper_max_torque: float = 1.0,
+        gripper_torque_kd: float = 0.3,
+        gripper_torque_rate: float = 1.0,
     ) -> None:
         self.model = load_openarm_spec(mjcf_path).compile()
         self.data = mujoco.MjData(self.model)
@@ -109,9 +121,23 @@ class OpenArmSim(RobotBackend):
 
             self._gravity_kin = OpenArmKinematics()
         self._initial = {s: np.asarray((initial_qpos or {}).get(s, np.zeros(ARM_DOF)), dtype=np.float64) for s in SIDES}
+        self.active_sides = tuple(s for s in SIDES if s in active_sides)
+
+        # Gripper torque mode: motor torque <-> finger force via the linear map of the driver.
+        self._m_per_rad = GRIPPER_OPEN_M / abs(gripper_motor_open_rad)
+        self._grip_max_tau = gripper_max_torque
+        self._grip_kd = gripper_torque_kd
+        self._grip_rate = gripper_torque_rate
+        self._grip_act = {s: self.model.actuator(f"{s}_finger1_ctrl").id for s in SIDES}
+        self._grip_dof = {s: int(self.model.jnt_dofadr[self.model.joint(f"openarm_{s}_finger_joint1").id]) for s in SIDES}
+        self._grip_prm = {s: (self.model.actuator_gainprm[a].copy(), self.model.actuator_biasprm[a].copy())
+                          for s, a in self._grip_act.items()}
+        self._grip_tau_target: Dict[Side, Optional[float]] = {s: None for s in SIDES}
+        self._grip_tau_cmd: Dict[Side, Optional[float]] = {s: None for s in SIDES}
 
         self._lock = threading.RLock()
-        self._target = np.zeros(CMD_DIM)
+        self._target = np.zeros(CMD_DIM)  # latest caller target (the interpolator's goal)
+        self._interp = TargetInterpolator()  # same streaming interpolation as the driver, on sim time
         self._setpoint = np.zeros(CMD_DIM)
         self._thread: Optional[threading.Thread] = None
         self._stop_evt = threading.Event()
@@ -132,6 +158,11 @@ class OpenArmSim(RobotBackend):
             joint_limit_margin=hw["joint_limit_margin_rad"],
             initial_qpos=hw["rest_qpos"],
             gravity_compensation_scale=cfg["robot"].get("sim_gravity_compensation_scale", 1.0),
+            active_sides=hw.get("active_sides", SIDES),
+            gripper_motor_open_rad=hw["gripper"]["motor_open_rad"],
+            gripper_max_torque=hw["gripper"].get("max_torque_nm", 1.0),
+            gripper_torque_kd=hw["gripper"].get("torque_kd", 0.3),
+            gripper_torque_rate=hw["gripper"].get("torque_rate_nm_s", 1.0),
         )
 
     # ---------------------------------------------------------- lifecycle
@@ -141,12 +172,16 @@ class OpenArmSim(RobotBackend):
         with self._lock:
             mujoco.mj_resetData(self.model, self.data)
             for side in SIDES:
+                self._grip_tau_target[side] = None
+                self._set_grip_torque_mode(side, None)
+            for side in SIDES:
                 self.data.qpos[self._qadr[side]] = self._initial[side]
             # Grippers closed: the calibrated real robot rests with closed grippers.
             self.data.qpos[[self._gadr[s] for s in SIDES]] = 0.0
             mujoco.mj_forward(self.model, self.data)
             measured = self._measured_vector()
             self._target = self.filter.reset(measured)
+            self._interp.reset(self._target, float(self.data.time))
             self._setpoint = self._target.copy()
             self.data.ctrl[:] = self._setpoint
 
@@ -180,13 +215,20 @@ class OpenArmSim(RobotBackend):
         with self._lock:
             arms = {}
             for side in SIDES:
+                tau_cmd = self._grip_tau_cmd[side]
                 arms[side] = ArmState(
                     q=self.data.qpos[self._qadr[side]].copy(),
                     dq=self.data.qvel[self._vadr[side]].copy(),
-                    tau=self.data.actuator_force[self._act[side]].copy(),
+                    # Total motor torque, like the Damiao feedback: servo + gravity feedforward.
+                    tau=self.data.actuator_force[self._act[side]] + self.data.qfrc_applied[self._vadr[side]],
                     gripper=float(self.data.qpos[self._gadr[side]]),
                     q_setpoint=self._setpoint[arm_slice(side)].copy(),
                     gripper_setpoint=float(self._setpoint[gripper_index(side)]),
+                    # Finger force (N, + opens) -> motor torque (Nm, + closes).
+                    gripper_tau=tau_cmd if tau_cmd is not None
+                    else -float(self.data.actuator_force[self._grip_act[side]]) * self._m_per_rad,
+                    gripper_torque_cmd=tau_cmd,
+                    active=side in self.active_sides,
                 )
             return RobotState(timestamp=float(self.data.time), arms=arms, fault=None, stats={"sim_time": float(self.data.time)})
 
@@ -197,9 +239,19 @@ class OpenArmSim(RobotBackend):
     ) -> None:
         with self._lock:
             for side, q in (q_arm or {}).items():
-                self._target[arm_slice(side)] = q
+                if side in self.active_sides:
+                    self._target[arm_slice(side)] = q
             for side, g in (gripper or {}).items():
-                self._target[gripper_index(side)] = g
+                if side in self.active_sides and self._grip_tau_target[side] is None:
+                    self._target[gripper_index(side)] = g
+            self._interp.set_goal(self._target, float(self.data.time))
+
+    def set_gripper_torque(self, torque_nm: Mapping[Side, Optional[float]]) -> None:
+        with self._lock:
+            for side, tau in torque_nm.items():
+                if side not in self.active_sides:
+                    raise ValueError(f"{side} arm is not active")
+                self._grip_tau_target[side] = None if tau is None else float(np.clip(tau, -self._grip_max_tau, self._grip_max_tau))
 
     def get_joint_targets(self) -> NDArray[np.float64]:
         with self._lock:
@@ -214,9 +266,45 @@ class OpenArmSim(RobotBackend):
 
     # ------------------------------------------------------------ physics
 
+    def _set_grip_torque_mode(self, side: Side, tau_close: Optional[float]) -> None:
+        """Finger actuator: position servo (``None``) or damping + applied force for ``tau_close`` Nm."""
+        a, dof = self._grip_act[side], self._grip_dof[side]
+        gain, bias = self._grip_prm[side]
+        self.model.actuator_gainprm[a] = gain
+        self.model.actuator_biasprm[a] = bias
+        self.data.qfrc_applied[dof] = 0.0
+        if tau_close is not None:
+            self.model.actuator_gainprm[a, 0] = 0.0
+            self.model.actuator_biasprm[a, 1] = 0.0
+            self.model.actuator_biasprm[a, 2] = -self._grip_kd / self._m_per_rad**2  # motor kd seen at the finger
+            self.data.qfrc_applied[dof] = -tau_close / self._m_per_rad
+
+    def _update_gripper_modes(self) -> None:
+        for side in SIDES:
+            tgt, cmd = self._grip_tau_target[side], self._grip_tau_cmd[side]
+            gi = gripper_index(side)
+            if tgt is None:
+                if cmd is not None:
+                    self._grip_tau_cmd[side] = None
+                    self._set_grip_torque_mode(side, None)
+                continue
+            if cmd is None:
+                cmd = float(np.clip(-self.data.actuator_force[self._grip_act[side]] * self._m_per_rad,
+                                    -self._grip_max_tau, self._grip_max_tau))
+            step = self._grip_rate * self._ctrl_dt
+            cmd += float(np.clip(tgt - cmd, -step, step))
+            self._grip_tau_cmd[side] = cmd
+            self._set_grip_torque_mode(side, cmd)
+            # Keep the position setpoint on the measured opening (bumpless return to position mode).
+            g = float(self.data.qpos[self._gadr[side]])
+            self.filter.reset_entry(gi, g)
+            self._target[gi] = g
+            self._interp.set_entry(gi, g)
+
     def _control_step(self) -> None:
         with self._lock:
-            self._setpoint = self.filter.step(self._target, self._ctrl_dt)
+            self._update_gripper_modes()
+            self._setpoint = self.filter.step(self._interp.value(float(self.data.time)), self._ctrl_dt)
             self.data.ctrl[:] = self._setpoint
             if self._gravity_kin is not None:
                 g = self._gravity_kin.gravity_torques({s: self._setpoint[arm_slice(s)] for s in SIDES})

@@ -23,7 +23,7 @@ import argparse
 import os
 import sys
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence
 
 import mujoco
 import numpy as np
@@ -55,9 +55,10 @@ def position_jacobian(kin: OpenArmKinematics, side: Side) -> np.ndarray:
     return jp[:, kin.dof_adr[side]]
 
 
-def report(kin: OpenArmKinematics, cfg: dict, q: Dict[Side, np.ndarray], gripper: Optional[Dict[Side, float]]) -> None:
+def report(kin: OpenArmKinematics, cfg: dict, q: Dict[Side, np.ndarray], gripper: Optional[Dict[Side, float]],
+           sides: Sequence[Side] = SIDES) -> None:
     poses = kin.fk(q)
-    for side in SIDES:
+    for side in sides:
         p, R = poses[side]
         kin.fk(q)  # leave both arms set for the Jacobian
         U, S, _ = np.linalg.svd(position_jacobian(kin, side))
@@ -107,7 +108,7 @@ def main() -> int:
         while True:
             st = robot.read_passive()
             print(f"\n=== {time.strftime('%H:%M:%S')} (motors not enabled) ===")
-            report(kin, cfg, {s: st.arms[s].q for s in SIDES}, {s: st.arms[s].gripper for s in SIDES})
+            report(kin, cfg, {s: st.arms[s].q for s in SIDES}, {s: st.arms[s].gripper for s in SIDES}, robot.active_sides)
             if args.watch <= 0:
                 break
             time.sleep(1.0 / args.watch)

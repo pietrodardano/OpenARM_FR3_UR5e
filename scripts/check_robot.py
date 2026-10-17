@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OpenArm bring-up check. Reads both arms WITHOUT enabling or moving anything.
+OpenArm bring-up check. Reads the active arms (hardware.active_sides) WITHOUT enabling or moving anything.
 
 Prints every joint's measured position next to the official limits, the
 gripper opening and the motor status codes. Run this first after power-on and
@@ -19,7 +19,7 @@ import yaml
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.control.robot_interface import ARM_DOF, SIDES, arm_slice  # noqa: E402
+from src.control.robot_interface import ARM_DOF, arm_slice  # noqa: E402
 from src.hardware import OpenArmBimanual  # noqa: E402
 
 
@@ -33,7 +33,7 @@ def main() -> int:
     state = robot.read_passive()
     tol = cfg["hardware"]["startup_limit_tolerance_rad"]
     ok = True
-    for side in SIDES:
+    for side in robot.active_sides:
         arm = state.arms[side]
         lo, hi = robot.limits.lower[arm_slice(side)], robot.limits.upper[arm_slice(side)]
         print(f"\n{side} arm ({cfg['hardware']['arms'][side]['can_interface']})")

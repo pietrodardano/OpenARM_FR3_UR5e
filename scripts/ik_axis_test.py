@@ -51,7 +51,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from src.control.ik_controller import IKController  # noqa: E402
 from src.control.robot_interface import SIDES, RobotBackend, Side, arm_slice  # noqa: E402
-from scripts.jog_joints import confirm, make_robot  # noqa: E402
+from scripts.jog_joints import active_sides, confirm, make_robot  # noqa: E402
 from scripts.safe_zero import MIN_JERK_PEAK_FACTOR, run_with_zero  # noqa: E402
 
 X, Y, Z = np.eye(3)
@@ -132,22 +132,22 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s", datefmt="%H:%M:%S")
 
     cfg = yaml.safe_load(open(args.config))
-    sides: List[Side] = list(SIDES) if args.side == "both" else [args.side]
     d, speed = args.dist_cm / 100, args.speed_cm / 100
     home = {s: np.asarray(cfg["robot"]["home_qpos"][s]) for s in SIDES}
     robot = make_robot(cfg, args.backend, args.render)
+    sides: List[Side] = active_sides(robot, args.side)
     ik = IKController.from_config(cfg, robot)
 
     def move_home() -> None:
         q_now = robot.get_joint_targets()
-        dist = max(np.degrees(np.max(np.abs(q_now[arm_slice(s)] - home[s]))) for s in SIDES)
+        dist = max(np.degrees(np.max(np.abs(q_now[arm_slice(s)] - home[s]))) for s in robot.active_sides)
         duration = max(3.0, MIN_JERK_PEAK_FACTOR * dist / args.joint_speed)
         print(f"\nMoving to home, the IK working pose ({dist:.0f} deg max, {duration:.1f} s)...")
         robot.move_joints(home, duration=duration)
         robot.advance(1.0)
 
     def test() -> None:
-        if not confirm(f"Move both arms to home {np.round(home['left'], 2).tolist()}?", args.yes):
+        if not confirm(f"Move {'/'.join(robot.active_sides)} arm(s) to home {np.round(home['left'], 2).tolist()}?", args.yes):
             return
         move_home()
         for side in sides:

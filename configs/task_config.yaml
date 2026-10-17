@@ -85,11 +85,23 @@ hardware:
   arms:
     left: {can_interface: "can1"}
     right: {can_interface: "can0"}
+  # Arms to drive. The others are never opened on CAN and are reported frozen at rest_qpos
+  # (their targets are ignored). Right arm is broken: set back to [left, right] once repaired.
+  active_sides: [left]
   motor_types: ["DM8009", "DM8009", "DM4340", "DM4340", "DM4310", "DM4310", "DM4310"]
   send_can_ids: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]
   recv_can_ids: [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17]
   gripper: {motor_type: "DM4310", send_can_id: 0x08, recv_can_id: 0x18,
-            kp: 5.0, kd: 0.1, motor_open_rad: -1.0472}  # 0 rad = closed, -1.0472 rad = 0.044 m open
+            kp: 5.0, kd: 0.1, motor_open_rad: -1.0472,  # 0 rad = closed, -1.0472 rad = 0.044 m open
+            # Torque mode (RobotBackend.set_gripper_torque): MIT with kp = 0 -> motor current loop.
+            # Squeeze force ~ 12 N per Nm (ideal linkage, before friction); free closing speed ~ torque / torque_kd rad/s.
+            # Measured (crush_test.py): 1.0 Nm does not crush an empty can and holds boxes (full/empty) and an
+            # upright full can; a full can grasped horizontally slips. See docs/real_robot_deployment.md.
+            max_torque_nm: 1.0, torque_kd: 0.3, torque_rate_nm_s: 4.0,
+            # Grasp approach (scripts/grip_torque_test.py grip()): torque ramps up until the fingers close at
+            # approach_speed_mm_s (beats linkage friction), capped at approach_max_torque_nm; at contact it
+            # drops to the grip torque.
+            approach_speed_mm_s: 15.0, approach_max_torque_nm: 0.6, approach_ramp_nm_s: 1.5}
   # MIT gains, official v1 defaults (openarm_description .../config/arm/control_gains.yaml).
   kp: [70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0]
   kd: [2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5]

@@ -12,6 +12,12 @@ URDF == ``openarm_mujoco`` v1 MJCF == raw ``openarm_can`` motor angles):
 - 7 arm joints per side, ``openarm_<side>_joint1..7``, radians.
 - 1 gripper per side, expressed as the parallel-link finger opening in metres,
   ``0.0`` = closed, ``0.044`` = fully open (``openarm_<side>_finger_joint1``).
+  A gripper can also be switched to torque mode (:meth:`RobotBackend.set_gripper_torque`):
+  it then squeezes with a commanded motor torque instead of tracking an opening.
+
+A backend may drive only some arms (``active_sides``, e.g. ``("left",)`` when one
+arm is broken). The other arm still appears in every state and command vector,
+frozen at its rest pose, and its targets are ignored.
 
 Flat "joint command vectors" have 16 entries, ordered like the MJCF actuators:
 ``[left j1..j7, left gripper, right j1..j7, right gripper]``.
@@ -79,6 +85,9 @@ class ArmState:
     q_setpoint: NDArray[np.float64]  # (7,) position setpoint sent this tick (after safety filter)
     gripper_setpoint: float  # gripper setpoint sent this tick, m
     motor_errors: Tuple[int, ...] = ()  # raw Damiao status nibble per motor (0/1 = OK, >=8 = fault)
+    gripper_tau: float = 0.0  # measured gripper motor torque, Nm, + = closing (squeezing)
+    gripper_torque_cmd: Optional[float] = None  # torque sent this tick in torque mode (Nm, + closes); None = position mode
+    active: bool = True  # False: arm not driven (frozen at its rest pose, values are placeholders)
 
 
 @dataclass
@@ -125,6 +134,49 @@ class JointLimits:
         return np.clip(vec, self.lower + m, self.upper - m)
 
 
+class TargetInterpolator:
+    """Spreads each new target over the caller's command period (servo-style streaming).
+
+    A caller streaming targets at 10-50 Hz into a 250 Hz control loop would otherwise make
+    the setpoint jump to each target and wait for the next one: a staircase the stiff
+    motors follow as stutter. Here each new target is reached linearly over the measured
+    period between calls (one period of latency). A target after a pause longer than
+    ``max_period`` is not stretched: it passes as a step (the safety filter ramps it).
+    """
+
+    def __init__(self, max_period: float = 0.1) -> None:
+        self.max_period = max_period
+        self._start = np.zeros(CMD_DIM)
+        self._goal = np.zeros(CMD_DIM)
+        self._t_goal = 0.0
+        self._period = 0.0
+
+    def reset(self, vec: NDArray[np.float64], now: float) -> None:
+        """Holds ``vec`` (start-up, fault recovery)."""
+        self._start = np.array(vec, dtype=np.float64)
+        self._goal = self._start.copy()
+        self._t_goal = now
+        self._period = 0.0
+
+    def set_goal(self, vec: NDArray[np.float64], now: float) -> None:
+        gap = now - self._t_goal
+        self._period = 0.0 if gap > self.max_period else (gap if self._period == 0.0 else 0.7 * self._period + 0.3 * gap)
+        self._start = self.value(now)
+        self._goal = np.array(vec, dtype=np.float64)
+        self._t_goal = now
+
+    def set_entry(self, index: int, value: float) -> None:
+        """Overrides one entry immediately (e.g. a gripper tracked by torque mode)."""
+        self._start[index] = value
+        self._goal[index] = value
+
+    def value(self, now: float) -> NDArray[np.float64]:
+        if self._period <= 0.0:
+            return self._goal.copy()
+        a = min(1.0, max(0.0, (now - self._t_goal) / self._period))
+        return self._start + a * (self._goal - self._start)
+
+
 def minimum_jerk(s: float) -> float:
     """Minimum-jerk time scaling: maps normalized time [0, 1] to progress [0, 1]."""
     s = min(max(s, 0.0), 1.0)
@@ -141,6 +193,7 @@ class RobotBackend(ABC):
     """
 
     limits: JointLimits
+    active_sides: Tuple[Side, ...] = SIDES  # arms actually driven; the others are frozen at rest
 
     # -------------------------------------------------------------- lifecycle
 
@@ -176,6 +229,16 @@ class RobotBackend(ABC):
     @abstractmethod
     def get_joint_targets(self) -> NDArray[np.float64]:
         """Current 16-dim target vector (before the safety filter)."""
+
+    def set_gripper_torque(self, torque_nm: Mapping[Side, Optional[float]]) -> None:
+        """Switches grippers between torque and position mode.
+
+        A float puts that gripper in torque mode: the motor squeezes with this torque
+        (Nm, + closes, - opens; clipped to the backend's limit and ramped). ``None``
+        returns it to position mode, holding the measured opening, which RELEASES
+        the squeeze: only do that while the object is supported.
+        """
+        raise NotImplementedError(f"{type(self).__name__} has no gripper torque mode")
 
     def advance(self, dt: float) -> None:
         """Lets ``dt`` seconds of robot time pass.

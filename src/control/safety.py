@@ -61,6 +61,12 @@ class JointSafetyFilter:
         self._anchor = self._setpoint.copy()
         return self._setpoint.copy()
 
+    def reset_entry(self, index: int, value: float) -> None:
+        """Re-anchors one entry (e.g. a gripper leaving torque mode) at ``value``; the others keep going."""
+        if self._setpoint is None:
+            raise RuntimeError("JointSafetyFilter.reset_entry() called before reset()")
+        self._setpoint[index] = np.clip(value, self.limits.lower[index], self.limits.upper[index])
+
     def step(self, target: NDArray[np.float64], dt: float) -> NDArray[np.float64]:
         """Advances the setpoint towards ``target`` by at most ``vmax * dt``."""
         if self._setpoint is None:

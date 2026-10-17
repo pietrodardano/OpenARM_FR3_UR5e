@@ -40,6 +40,11 @@ def distance_to_zero_deg(robot: RobotBackend, cfg: dict) -> float:
 
 def go_to_zero(robot: RobotBackend, cfg: dict, speed_deg_s: float = 10.0, grippers: bool = True) -> None:
     """Minimum-jerk joint move to the zero pose at ``speed_deg_s`` peak (grippers close if ``grippers``)."""
+    torque_mode = [s for s in robot.active_sides if robot.get_state().arms[s].gripper_torque_cmd is not None]
+    if torque_mode:
+        print(f"Gripper torque mode off for {torque_mode} (releases a grasped object)")
+        robot.set_gripper_torque({s: None for s in torque_mode})
+        robot.advance(0.1)
     dist = distance_to_zero_deg(robot, cfg)
     duration = max(3.0, MIN_JERK_PEAK_FACTOR * dist / speed_deg_s)
     print(f"\nGoing to zero{' (grippers closed)' if grippers else ''}: {dist:.0f} deg max, {duration:.1f} s")

@@ -122,6 +122,32 @@ MuJoCo dry runs are CPU-only. A GPU only matters later for policy inference.
 10. **Gravity feedforward:** with `gravity_compensation_scale: 0.0` the arm sags about 0.06 rad at `home`, which puts the TCP a few cm low. Raise the scale gradually (0.3 → 0.7 → 1.0) and confirm that the measured-vs-commanded TCP error printed by the IK demo shrinks. If it grows, the torque sign is wrong; set it back to 0.
 11. **Table:** measure the table height in the base frame and set `controllers.ik.workspace.*.low[2]` above it.
 
+## Single-arm operation
+
+`hardware.active_sides` in `configs/task_config.yaml` lists the arms to drive (currently `[left]`, because the right arm is broken). An inactive arm's CAN bus is never opened. The arm still appears in every `RobotState` and 16-dim vector, frozen at `rest_qpos` with `ArmState.active = False`, and its targets are ignored. The MuJoCo backend behaves the same way. Scripts with `--side both` use only the active arms.
+
+## Gripper torque mode and weight comparison
+
+`robot.set_gripper_torque({"left": 0.3})` switches a gripper to torque mode: MIT with `kp = 0`, so the motor's current loop outputs the torque (Nm, + closes). The command is capped at `gripper.max_torque_nm`, ramped at `torque_rate_nm_s`, and damped by `torque_kd` (free closing speed ≈ torque / kd rad/s). The rough squeeze force is 12 N per Nm, assuming an ideal linkage with no friction. `ArmState.gripper_tau` is the measured torque. `set_gripper_torque({"left": None})` returns the gripper to position mode at the measured opening, which releases the squeeze. Torque mode stays on through a fault; `go_to_zero()` and `stop()` turn it off. The motor also supports Damiao's native POS_FORCE mode (position target + current cap), which the SDK exposes but this driver does not use.
+
+Linkage friction makes a gentle grip torque close very slowly. The scripts' `grip()` therefore approaches first: it ramps the torque up until the fingers close at `approach_speed_mm_s`, capped at `approach_max_torque_nm`. When the fingers stop on the object, it drops to the grip torque.
+
+1. **Grip torque:** `python scripts/grip_torque_test.py --backend real` steps the torque up on a hand-held object and stops when the fingers keep closing after contact (the object is deforming). It then lifts the object to check that it holds.
+2. **Which object is heavier:** `python scripts/compare_weights.py --backend real --labels A B --grip-torque <Nm>`. For each object: low pose (elbow 30°), you put the object in the hand, grip, lift to elbow 90°, measure, lower, release. Each lift is appended to `logs/weigh_history.jsonl`. `--decide` re-runs the decision from that file.
+
+**Measured grip limits (2026-10-17, left gripper, torque mode, from `crush_test.py`):**
+
+| object | grasp | result at 1.0 Nm |
+|---|---|---|
+| empty can | — | not crushed (1 Nm is roughly the safe upper bound) |
+| full / empty box | — | no slip |
+| full can | upright (can axis vertical, hand forward at elbow 90°) | no slip |
+| full can | horizontal (can axis horizontal) | **slips** |
+
+So for the demo, grip cans upright at about 1 Nm, or use the boxes. Don't plan horizontal grasps of a full can.
+
+How the load is measured (`src/estimation/payload.py`): joints 1, 4 and 7 dither ±1° over whole sine cycles, which cancels friction. The model's arm gravity is subtracted, and the residual is projected on the vertical TCP Jacobian. At elbow 90°, 300 g adds about 1.2 Nm on joints 1 and 4 and about 0.56 Nm on joint 7. The absolute "equivalent mass" is rough. The difference between two objects measured the same way is what decides, reported with `z` = difference / noise (above 3 is a clear call).
+
 ## Tests
 
 ```bash

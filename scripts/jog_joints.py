@@ -64,6 +64,15 @@ def make_robot(cfg: dict, backend: str, render: bool) -> RobotBackend:
     return OpenArmSim.from_config(cfg, realtime=True, render=render)
 
 
+def active_sides(robot: RobotBackend, choice: str) -> List[Side]:
+    """``--side`` choice ("left" / "right" / "both") restricted to the arms the backend drives."""
+    wanted = list(SIDES) if choice == "both" else [choice]
+    sides = [s for s in wanted if s in robot.active_sides]
+    if not sides:
+        raise SystemExit(f"--side {choice}: arm not active (hardware.active_sides = {list(robot.active_sides)})")
+    return sides
+
+
 def confirm(msg: str, auto_yes: bool) -> bool:
     if auto_yes:
         return True
@@ -72,16 +81,16 @@ def confirm(msg: str, auto_yes: bool) -> bool:
 
 def hold_check(robot: RobotBackend, seconds: float) -> None:
     """Holds the current pose and reports the worst setpoint-vs-measured error."""
-    worst = {s: 0.0 for s in SIDES}
+    worst = {s: 0.0 for s in robot.active_sides}
     for _ in range(int(seconds * RATE_HZ)):
         robot.advance(1.0 / RATE_HZ)
         st = robot.get_state()
-        for s in SIDES:
+        for s in robot.active_sides:
             worst[s] = max(worst[s], float(np.max(np.abs(st.arms[s].q_setpoint - st.arms[s].q))))
         if st.fault:
             raise RuntimeError(st.fault)
     st = robot.get_state()
-    for s in SIDES:
+    for s in robot.active_sides:
         print(f"  {s}: max hold error {np.degrees(worst[s]):.2f} deg, motor status {[hex(c) for c in st.arms[s].motor_errors]}")
 
 
@@ -169,12 +178,12 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s", datefmt="%H:%M:%S")
 
     cfg = yaml.safe_load(open(args.config))
-    sides: List[Side] = list(SIDES) if args.side == "both" else [args.side]
     joints = [int(j) - 1 for j in args.joints.split(",")]
     delta, speed = np.radians(args.deg), np.radians(args.speed)
 
     kin = OpenArmKinematics(cfg["robot"]["mjcf_path"])
     robot = make_robot(cfg, args.backend, args.render)
+    sides: List[Side] = active_sides(robot, args.side)
 
     def test() -> None:
         print("\n[1/3] Holding the zero pose for 3 s (no motion)...")
