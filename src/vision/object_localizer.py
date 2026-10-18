@@ -33,6 +33,7 @@ SAM2_CHECKPOINTS = {
 }
 
 _deform_attn_patched = False
+_bert_attention_mask_patched = False
 
 
 def patch_deformable_attention() -> None:
@@ -57,6 +58,70 @@ def patch_deformable_attention() -> None:
 
     msda.MultiScaleDeformableAttnFunction = _PureTorchDeformAttn
     _deform_attn_patched = True
+
+
+def patch_bert_attention_mask() -> None:
+    """Restores three ``ModuleUtilsMixin`` methods ``transformers`` dropped by 5.x.
+
+    GroundingDINO's ``BertModelWarper`` (``groundingdino/models/GroundingDINO/bertwarper.py``)
+    grabs ``get_extended_attention_mask``, ``invert_attention_mask`` and ``get_head_mask`` off the
+    BERT model at construction time. GroundingDINO was written against an older ``transformers``
+    API that had these on every model; building the model otherwise raises ``AttributeError``.
+    The implementations below are the standard ones from older ``transformers`` releases.
+    """
+    global _bert_attention_mask_patched
+    if _bert_attention_mask_patched:
+        return
+    from transformers import PreTrainedModel
+
+    if all(hasattr(PreTrainedModel, n) for n in ("get_extended_attention_mask", "invert_attention_mask", "get_head_mask")):
+        _bert_attention_mask_patched = True
+        return
+
+    def _model_dtype(self) -> torch.dtype:
+        return next(self.parameters()).dtype
+
+    def get_extended_attention_mask(self, attention_mask, input_shape, device=None, dtype=None):
+        del input_shape, device
+        dtype = dtype if dtype is not None else _model_dtype(self)
+        if attention_mask.dim() == 3:
+            extended = attention_mask[:, None, :, :]
+        elif attention_mask.dim() == 2:
+            extended = attention_mask[:, None, None, :]
+        else:
+            raise ValueError(f"attention_mask with shape {attention_mask.shape} is not 2D or 3D")
+        extended = extended.to(dtype=dtype)
+        return (1.0 - extended) * torch.finfo(dtype).min
+
+    def invert_attention_mask(self, encoder_attention_mask):
+        dtype = _model_dtype(self)
+        if encoder_attention_mask.dim() == 3:
+            extended = encoder_attention_mask[:, None, :, :]
+        elif encoder_attention_mask.dim() == 2:
+            extended = encoder_attention_mask[:, None, None, :]
+        else:
+            raise ValueError(f"encoder_attention_mask with shape {encoder_attention_mask.shape} is not 2D or 3D")
+        extended = extended.to(dtype=dtype)
+        return (1.0 - extended) * torch.finfo(dtype).min
+
+    def get_head_mask(self, head_mask, num_hidden_layers, is_attention_chunked=False):
+        if head_mask is None:
+            return [None] * num_hidden_layers
+        if head_mask.dim() == 1:
+            head_mask = head_mask.unsqueeze(0).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+            head_mask = head_mask.expand(num_hidden_layers, -1, -1, -1, -1)
+        elif head_mask.dim() == 2:
+            head_mask = head_mask.unsqueeze(1).unsqueeze(-1).unsqueeze(-1)
+        head_mask = head_mask.to(dtype=_model_dtype(self))
+        return head_mask.unsqueeze(-1) if is_attention_chunked else head_mask
+
+    if not hasattr(PreTrainedModel, "get_extended_attention_mask"):
+        PreTrainedModel.get_extended_attention_mask = get_extended_attention_mask
+    if not hasattr(PreTrainedModel, "invert_attention_mask"):
+        PreTrainedModel.invert_attention_mask = invert_attention_mask
+    if not hasattr(PreTrainedModel, "get_head_mask"):
+        PreTrainedModel.get_head_mask = get_head_mask
+    _bert_attention_mask_patched = True
 
 
 @dataclass
@@ -85,6 +150,7 @@ class ObjectLocalizer:
         detect_every: int = 1,
     ) -> None:
         patch_deformable_attention()
+        patch_bert_attention_mask()
         from groundingdino.util.inference import load_model
         import groundingdino.datasets.transforms as T
         from sam2.build_sam import build_sam2
