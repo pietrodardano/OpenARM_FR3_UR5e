@@ -16,9 +16,9 @@
 |---|---|---|
 | `main` | Task state machine ([src/task/](src/task/)), the proven real-robot controller (copied from `deploy/openarm-real`), simulation workcell, docs | Normal development |
 | `deploy/openarm-real` | Source of the real-robot controller now on `main`: `RobotBackend`, Cartesian `IKController.move_l`, gripper torque mode, `payload.py` weighing, `OpenArmSim` | **Do not merge wholesale.** Its useful files were copied to `main` (see [docs/demo_task.md §9](docs/demo_task.md#9-integration-status)); change them on `main` |
-| vision branch (team-mate) | GroundingDINO + SAM2 (+ VLM) segmentation and object XY | **Do not merge yet. Do not go looking for it.** |
+| `demo-simulation` (team-mate) | Vision pipeline (GroundingDINO + SAM2, camera calibration) plus unrelated sandbox demos | Vision files of commit `6b5d670` copied to `main` (`src/vision/`, calibration scripts). **Do not merge the rest** |
 
-- The task layer depends only on the Protocols in [src/task/interfaces.py](src/task/interfaces.py) (`ObjectDetector`, `ManipulationSkills`, `PayloadEstimator`). The robot side is implemented by [src/task/openarm_adapter.py](src/task/openarm_adapter.py). The vision branch implements `ObjectDetector`; until then, positions come from `demo.manual_objects`.
+- The task layer depends only on the Protocols in [src/task/interfaces.py](src/task/interfaces.py) (`ObjectDetector`, `ManipulationSkills`, `PayloadEstimator`). The robot side is implemented by [src/task/openarm_adapter.py](src/task/openarm_adapter.py). Vision is [src/vision/vision_detector.py](src/vision/vision_detector.py) (`VisionObjectDetector`); `demo.manual_objects` / `--objects` remain the manual fallback. torch / GroundingDINO / SAM2 are not installed on the integration Mac: import them lazily, and keep tests runnable without them.
 - Do not re-implement vision on `main`. Treat the proven controller files (`src/hardware/`, `src/control/{robot_interface,safety,ik_controller,joint_position_controller}.py`, `src/estimation/payload.py`) as validated on hardware: change them only deliberately, and re-test on `--backend fake` / `sim`.
 
 ---
@@ -36,7 +36,7 @@
 | **Motion Planning** | OMPL (optional; RBS only after model compatibility is verified) | [OMPL Library](https://ompl.kavrakilab.org/) |
 | **Robot Hardware Setup** | OpenArm v1 bimanual, parallel-link grippers (left arm active) | [enactic/openarm](https://github.com/enactic/openarm) |
 | **Camera** | HBV HD CAMERA, RGB only, torso-mounted | [docs/camera_specifications.md](docs/camera_specifications.md) |
-| **Object Perception** | GroundingDINO (open-vocabulary boxes), SAM2 (masks), optional VLM | Vision branch |
+| **Object Perception** | GroundingDINO (open-vocabulary boxes), SAM2 (masks), top-face PCA | `src/vision/`, deps in `requirements-vision.txt` |
 | **Language & Tooling** | Python 3.10+, NumPy, SciPy, PyYAML, uv | Modern Python packaging |
 
 ---
@@ -47,7 +47,7 @@
 [ RGB camera (torso mount) ]
     │  frames @ 30 Hz
     ▼
-[ Vision branch: GroundingDINO → SAM2 (→ VLM) ]
+[ src.vision.vision_detector: GroundingDINO → SAM2 → top-face PCA ]
     │  mask centroid → ray ∩ table plane  ⇒  ObjectDetection(label, x, y, yaw, conf), base frame
     ▼
 [ src.task.weigh_and_sort.WeighAndSortTask ]  ◄── demo: section of configs/task_config.yaml
@@ -67,7 +67,7 @@
 2. **Robot base frame ($R$):** the official OpenArm model frame used by the real-robot controller: $+X$ forward, $+Y$ left, $+Z$ up, shoulder axis at $z = 0.697$ m. Every `demo:` pose is expressed in it.
 3. **TCP frames:** the `<side>_tcp` sites of the official MJCF.
 4. **Table plane:** tabletop 0.725 m above the floor = $z = 0.092$ m in $R$ (derived in `src/task/workcell.py` from the measured `workcell` section).
-5. **Pixel → table (owned by the vision branch):** $d = R_{C}^{R} K^{-1} [u, v, 1]^T$, $p = c + \lambda d$ with $\lambda = (z_{plane} - c_z)/d_z$. RGB only: the known table plane provides the depth.
+5. **Pixel → table (`TableCalibration.pixel_to_plane`, at table + object top height):** $d = R_{C}^{R} K^{-1} [u, v, 1]^T$, $p = c + \lambda d$ with $\lambda = (z_{plane} - c_z)/d_z$. RGB only: the known table plane provides the depth.
 
 ---
 

@@ -8,7 +8,7 @@
 |---|---|---|---|
 | Foundation & sim workcell | `main` | **Done** | Official OpenArm v1 scene, measured workcell, OMPL pick-and-place, cross-embodiment view |
 | Real-robot control & weighing | `main` (from `deploy/openarm-real`) | **Done** | Cartesian `move_l`, gripper torque mode, torque-based load comparison tested on the real left arm |
-| Vision: object finding | vision branch | **In progress, not merged** | GroundingDINO + SAM2 (+ VLM) → object XY on the table in the base frame |
+| Vision: object finding | `main` (`src/vision/`, from `demo-simulation`) | **Integrated, needs camera calibration on site** | GroundingDINO + SAM2 → top-face centroid → base-frame XY, fused over frames |
 | Demo state machine + robot adapter | `main` (`src/task/`) | **Done (mock + sim rehearsal)** | Detect → weigh × 2 → compare → sort / felt handover; `OpenArmSkills` with IK-checked moves |
 | Physics sim of the full task | `main` | **Done** | 72.5 cm workcell, real can lifting, torque weighing, sort + felt handover (simulated user) |
 | First real run | robot | Next | Cans/bins at the §7 layout, `--backend real --mirror` with manual object positions |

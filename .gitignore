@@ -35,3 +35,6 @@ docker/.env
 
 # Local run outputs
 outputs/
+
+# Downloaded model checkpoints (GroundingDINO / SAM2), not source.
+weights/

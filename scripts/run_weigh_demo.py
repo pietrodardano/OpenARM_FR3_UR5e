@@ -19,8 +19,14 @@ Backends:
 - ``fake``: the real driver on a simulated CAN bus (no objects).
 - ``real``: ``OpenArmBimanual`` over openarm_can.
 
-Until the vision branch is merged, object positions come from ``demo.manual_objects`` or
-``--objects "x,y[,yaw];x,y[,yaw]"`` (base frame, m).
+Object positions (``--detector``, default ``auto``):
+
+- ``vision``: the RGB camera with GroundingDINO + SAM2 (src/vision/vision_detector.py), mapped
+  to the base frame by ``configs/camera_extrinsics.yaml``. Default for ``--backend real``. Needs
+  torch, GroundingDINO, SAM2 and the weights (requirements-vision.txt) on the machine running it.
+  Before anything moves, vision is polled once and the positions are shown for confirmation.
+- ``sim``: ground truth of the simulated cans (default for ``--backend sim``).
+- ``manual``: ``demo.manual_objects`` or ``--objects "x,y[,yaw];x,y[,yaw]"`` (base frame, m).
 
 Lifecycle with a robot backend: start -> table-safe route home -> task -> park beside the table
 -> zero -> stop. The arm is never sent straight between zero and the table area, because the
@@ -103,7 +109,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--prompt", help="free-text instruction (default: demo.prompt)")
     parser.add_argument("--backend", choices=["mock", "sim", "fake", "real"], default="mock")
-    parser.add_argument("--objects", help='object positions "x,y[,yaw];x,y[,yaw]" (overrides demo.manual_objects)')
+    parser.add_argument("--objects", help='object positions "x,y[,yaw];x,y[,yaw]" (implies --detector manual)')
+    parser.add_argument("--detector", choices=["auto", "vision", "sim", "manual"], default="auto",
+                        help="where object positions come from (auto: real -> vision, sim -> sim, else manual)")
     parser.add_argument("--render", action="store_true", help="MuJoCo viewer of the simulation (sim only)")
     parser.add_argument("--mirror", action="store_true", help="live read-only twin that follows the robot's measured state")
     parser.add_argument("--no-user", action="store_true", help="sim: nobody takes the offered object (timeout path)")
@@ -155,11 +163,30 @@ def main() -> int:
             robot, geo.to_world([h["x"], h["y"], geo.table_top_z_m + h["above_table_m"]]),
             [f"can_{i + 1}" for i in range(len(objects))], u.get("grasp_after_s"), u["pull_force_n"],
             geo.to_world([0.60, 0.25, geo.table_top_z_m + 0.06]), gripper_side=demo_cfg.get("side", "left")))
-    if args.backend == "sim" and not args.objects:
+    source = "manual" if args.objects else args.detector
+    if source == "auto":
+        source = {"real": "vision", "sim": "sim"}.get(args.backend, "manual")
+    if source == "sim":
+        if args.backend != "sim":
+            parser.error("--detector sim needs --backend sim")
         from src.simulation.sim_user import SimObjectDetector
 
         detector = SimObjectDetector(getattr(robot, "_robot", robot), [f"can_{i + 1}" for i in range(len(objects))],
                                      geo.base_z_in_world_m, geo.table_top_world_m, intent.object_prompt)
+    elif source == "vision":
+        from src.vision.vision_detector import build_vision_detector
+
+        detector = build_vision_detector(cfg, str(PROJECT_ROOT))
+        seen = detector.detect(intent.object_prompt)
+        print(f"Vision sees {len(seen)} '{intent.object_prompt}' (base frame): "
+              + "; ".join(f"({d.x:.3f}, {d.y:.3f}) conf {d.confidence:.2f}" for d in seen))
+        if len(seen) != config.expected_objects or not confirm("Do these positions match the table?", args.yes):
+            if len(seen) != config.expected_objects:
+                print(f"Expected {config.expected_objects} objects: fix the scene or the prompt, or pass --objects.")
+            detector.close()
+            return 1
+        objects = [{"label": d.label, "x": d.x, "y": d.y} for d in seen]
+    print(f"Object positions from: {source}")
     skills = OpenArmSkills(robot, cfg, demo_cfg.get("side", "left"), kin, require_object=args.backend != "fake",
                            collision_scene=str(scene))
     estimator = OpenArmPayloadEstimator(robot, kin, skills.side, skills.motion)
@@ -202,6 +229,8 @@ def main() -> int:
         robot.stop()
         if mirror is not None:
             mirror.stop()
+        if hasattr(detector, "close"):
+            detector.close()
     if report is not None:
         print_report(report)
         if args.backend == "sim":

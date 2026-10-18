@@ -34,20 +34,25 @@ stays upright the whole time: grasp, carry, weigh pose, bins and handover all us
   +X forward, +Y left, +Z up; the shoulder axis is at $z = 0.697$ m. Every pose in `demo:` is in this frame.
 - **Table plane:** $z = z_{table} = 0.092$ m in the base frame, derived from the measured 0.725 m tabletop
   and the 1.330 m shoulder height ([src/task/workcell.py](../src/task/workcell.py)).
-- **Vision output:** with an RGB-only camera, depth comes from the known table plane.
-  The vision branch intersects the camera ray through the object's mask centroid with
-  the table plane and returns, per object, an
-  [`ObjectDetection`](../src/task/interfaces.py): `label`, `x`, `y` (base frame, m),
-  `yaw` (rad), `confidence`, `frame="base"`.
+- **Vision output:** [`VisionObjectDetector`](../src/vision/vision_detector.py) implements the task's
+  `ObjectDetector`. Per object it returns an [`ObjectDetection`](../src/task/interfaces.py): `label`,
+  `x`, `y` (base frame, m), `confidence`, `frame="base"`. Pipeline per poll:
+  1. Grab `vision.object_detection.frames` frames (rotated like the calibration, colour-corrected).
+  2. [`ObjectLocalizer`](../src/vision/object_localizer.py): GroundingDINO boxes from the text prompt,
+     SAM2 masks, PCA fit of each object's top face.
+  3. RGB only, so depth comes from geometry. The top-face centroid's camera ray is intersected with the
+     plane at table height + the object's top height (0.12 m for a can):
+     with intrinsics $K$, camera-to-base rotation $R$ and camera centre $c$,
+     $d = R K^{-1}[u, v, 1]^T$, $p = c + \lambda d$, $\lambda = (z_{plane} - c_z)/d_z$.
+     Mapping the top face through the table homography instead would be off by about 3 cm (parallax).
+  4. Fuse the frames: merge within 4 cm, keep objects seen in at least half the frames, drop anything
+     outside `vision.object_detection.workspace`.
+- **Calibration:** `configs/camera_extrinsics.yaml` (intrinsics, camera pose, table homography), written by
+  `scripts/calibrate_camera_touch.py` (best) or `calibrate_table_tape.py`; see
+  [camera_calibration.md](camera_calibration.md). Both now default the table plane to the **base-frame**
+  height (0.092 m).
 
-  With intrinsics $K$, camera-to-base rotation $R$ and camera center $c$, pixel
-  $(u, v)$ maps to the ray $d = R K^{-1}[u, v, 1]^T$, and the table point is
-  $p = c + \lambda d$ with $\lambda = (z_{plane} - c_z)/d_z$. Use the object's
-  contact-plane height (table top) or its grasp-height plane, consistently.
-
-The vision pipeline (GroundingDINO for open-vocabulary boxes from `demo.object_prompt`,
-SAM2 for masks, optional VLM for verification) only decides *where*. It must not and
-cannot decide *which one is full*.
+The vision pipeline only decides *where*. It must not and cannot decide *which one is full*.
 
 ## 4. Sequence
 
@@ -157,8 +162,13 @@ uv run python -m unittest tests.test_task -v
   - A ground-truth detector stands in for vision.
   - In the handover, a simulated user pulls on the offered can after `demo.sim.user.grasp_after_s`.
     `--no-user` tests the timeout path.
-- **Real (`--backend real`):** object positions come from `demo.manual_objects` or `--objects "x,y;x,y"` until the vision
-  branch is merged. `--mirror` shows a read-only twin of the demo scene following the measured joints; the
+- **Real (`--backend real`):** object positions come from vision (`--detector vision`, the default).
+  - Before anything moves, vision is polled once and the base-frame positions are printed for you to confirm.
+  - The task re-polls vision before it picks the object it put back.
+  - `--objects "x,y;x,y"` or `--detector manual` uses fixed positions instead.
+  - Vision alone, no robot: `python scripts/detect_objects.py --prompt "soda can"` prints the positions and saves an
+    annotated frame to `outputs/detections.png`.
+  - `--mirror` shows a read-only twin of the demo scene following the measured joints; the
   held can is drawn attached to the hand while the gripper squeezes. On macOS, viewers need `mjpython`.
 
 ## 9. Integration status
@@ -168,7 +178,7 @@ uv run python -m unittest tests.test_task -v
 | Task state machine, contracts, contact detector, mocks | `main`: [src/task/](../src/task/) | Done; mock + sim rehearsal pass |
 | Real robot driver, Cartesian `IKController.move_l`, gripper torque mode, `payload.measure_load`, `OpenArmSim` | `main`, brought from `deploy/openarm-real` (files copied, branch not merged) | Proven on the real left arm |
 | Robot adapter `OpenArmSkills` / `OpenArmPayloadEstimator` | `main`: [src/task/openarm_adapter.py](../src/task/openarm_adapter.py) | Done; sim-rehearsed, **not yet run on the real arm** |
-| GroundingDINO + SAM2 (+ VLM) segmentation, object XY on the table | vision branch (team-mate) | In progress, **not merged** |
+| GroundingDINO + SAM2 localization, camera calibration, `VisionObjectDetector` | `main`: [src/vision/](../src/vision/), from `origin/demo-simulation` commit `6b5d670` (vision files only) | Integrated; geometry tested without torch. **Not yet run end to end with the camera + robot** |
 
 From `deploy/openarm-real` we took `src/{control,hardware,estimation}`, the OpenArm
 IK/kinematics, `OpenArmSim`, `docker/`, the deployment doc and its tests, and these scripts:
@@ -178,10 +188,18 @@ We left out `crush_test.py` (a one-off grip-limit characterization, results reco
 `gripper_test.py` (replaced by torque mode). Both remain on the branch. Do not merge the branch
 wholesale; changes to these files belong on `main` now.
 
+From `origin/demo-simulation` we took only the vision commit's files: `src/vision/{camera,
+object_localizer, rect_face_pca, table_calibration}.py`, the calibration / capture / visualization
+scripts, their tests and `docs/camera_calibration.md`. The sandbox, lever, jug scenes and that branch's
+older copy of the controller were not taken. Its GroundingDINO / SAM2 dependencies are in
+`requirements-vision.txt` (not in `pyproject.toml`: they need torch to build, which breaks `uv lock`).
+
 Remaining checklist:
 
-1. Vision branch implements `ObjectDetector.detect(prompt)`, returning base-frame
-   `ObjectDetection`s. It replaces `MockObjectDetector(demo.manual_objects)` in `run_weigh_demo.py`.
+1. On the Linux workstation (README, "Full run on the Linux workstation"):
+   1. `ROBOTOKENS_VISION=1 docker/dev.sh build`, then `scripts/download_vision_weights.sh`.
+   2. Calibrate the camera: intrinsics, then `calibrate_camera_touch.py --side left`.
+   3. Check `scripts/detect_objects.py` against a ruler.
 2. Place the real cans and bins at the layout of §7 (or pass `--objects`). Check that the table's rear
    edge and height match `workcell.table` and that the robot's left side is clear for the side route.
 3. First real run: `--backend real --mode sort` with two empty cans (low risk), then full / empty.

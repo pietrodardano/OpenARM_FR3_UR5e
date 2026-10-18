@@ -25,7 +25,7 @@ Full task spec: [docs/demo_task.md](docs/demo_task.md).
 |---|---|---|
 | **OpenArm v1** (parallel-link gripper) | [enactic/openarm](https://github.com/enactic/openarm): `openarm_can`, `openarm_description`, `openarm_mujoco` | Robot, official model, SocketCAN control. Left arm active |
 | **Real-robot controller + weighing** | [src/control/](src/control/), [src/hardware/](src/hardware/), [src/estimation/](src/estimation/) (from `deploy/openarm-real`) | Proven `openarm_can` driver, Cartesian `move_l`, gripper torque mode, torque-based load comparison, `OpenArmSim` |
-| **Object perception** | vision branch (not merged yet) | GroundingDINO boxes, SAM2 masks, optional VLM check, XY on the table plane |
+| **Object perception** | [src/vision/](src/vision/) (from `demo-simulation`) | GroundingDINO boxes, SAM2 masks, top-face PCA, calibrated pixel → base-frame XY (`VisionObjectDetector`) |
 | **Task layer** | `main`: [src/task/](src/task/) | Demo state machine, component contracts, felt-handover contact detection, mocks |
 | **HBV HD CAMERA** | [docs/camera_specifications.md](docs/camera_specifications.md) | RGB only, torso mount, 720p/1080p @ 30 FPS |
 | **MuJoCo** | [google-deepmind/mujoco](https://github.com/google-deepmind/mujoco) | Measured workcell, dry runs, collision checking |
@@ -56,7 +56,7 @@ RoboTokens/
 │   ├── estimation/payload.py    # Load measurement from joint torques (dithered), comparison
 │   ├── planning/                # Official-model kinematics + mink IK; OMPL / RBS for the workcell sim
 │   ├── simulation/              # OpenArmSim (same API as the driver), real_mirror.py (live twin), workcell wrapper
-│   └── vision/                  # Earlier stream listener (superseded by the vision branch)
+│   └── vision/                  # GroundingDINO + SAM2 localizer, camera, calibration, VisionObjectDetector
 ├── docker/                      # Robot-PC container (rootful Docker, SocketCAN, openarm_can 1.4.0)
 ├── scripts/
 │   ├── run_weigh_demo.py        # Final demo runner: --backend mock | sim | fake | real
@@ -76,8 +76,8 @@ RoboTokens/
     ├── physical_workcell.md, openarm_v1_environment.md, camera_specifications.md, cross_embodiment.md
 ```
 
-The real-robot code was copied from `deploy/openarm-real`; that branch is not merged.
-The vision branch (GroundingDINO + SAM2, implementing `ObjectDetector`) is **not merged yet**.
+The real-robot code was copied from `deploy/openarm-real`, and the vision pipeline from the vision commit of
+`demo-simulation`; neither branch is merged wholesale.
 See [docs/demo_task.md §9](docs/demo_task.md#9-integration-status).
 
 ---
@@ -88,7 +88,7 @@ See [docs/demo_task.md §9](docs/demo_task.md#9-integration-status).
 git clone https://github.com/pietrodardano/RoboTokens.git
 cd RoboTokens
 uv venv --python 3.11
-uv sync --extra rbs --extra dev
+uv sync --extra rbs --extra dev --extra calib
 ```
 
 For the official OpenArm v1 sources and the MuJoCo workcell scene, follow
@@ -107,7 +107,24 @@ uv run python scripts/run_weigh_demo.py --backend real --mode sort              
 uv run python scripts/run_weigh_demo.py --backend real --mode sort --mirror       # + live MuJoCo twin
 ```
 `--mirror` opens a read-only MuJoCo twin that follows the real arm's *measured* joints (the robot is the leader), with the commanded TCP, table, objects, bins and handover pose overlaid. On macOS run it under `mjpython`.
-Until vision is merged, object positions come from `demo.manual_objects` or `--objects "x,y;x,y"`.
+On the real robot, object positions come from the camera (GroundingDINO + SAM2): they are shown for confirmation
+before anything moves. `--objects "x,y;x,y"` overrides them.
+
+### Full run on the Linux workstation (robot + camera + GPU), in the container
+```bash
+ROBOTOKENS_VISION=1 docker/dev.sh build        # + torch (CUDA 12.8 wheels), GroundingDINO, SAM2
+docker/dev.sh shell                            # everything below runs inside
+scripts/download_vision_weights.sh             # weights/ (GroundingDINO SwinT, SAM2.1 small)
+scripts/setup_can.sh && python scripts/check_robot.py
+python scripts/calibrate_intrinsics.py ...     # lens, once (docs/camera_calibration.md)
+python scripts/calibrate_camera_touch.py --side left --session outputs/touch_session   # camera pose
+python scripts/detect_objects.py --prompt "soda can"                     # vision only: check with a ruler
+python scripts/run_weigh_demo.py --backend sim --fast --yes              # dry run of the task
+python scripts/run_weigh_demo.py --backend real --mirror --prompt "put the lighter can in the left bin"
+python scripts/run_weigh_demo.py --backend real --mirror --prompt "give me the heavy can"
+```
+Other CUDA versions: `ROBOTOKENS_TORCH_INDEX=https://download.pytorch.org/whl/cu126 ROBOTOKENS_VISION=1 docker/dev.sh build`.
+Without the container: torch for your GPU, then `pip install -r requirements-vision.txt`.
 The real backend refuses to run until the table height is measured. See
 [docs/demo_task.md §7–8](docs/demo_task.md#7-reach-layout-and-motion-safety).
 

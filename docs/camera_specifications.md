@@ -2,7 +2,7 @@
 
 The only perception sensor of the demo: an RGB camera (no depth) fixed on the torso
 mount, looking forward and 20° down at the table ([physical_workcell.md](physical_workcell.md)).
-The vision branch runs GroundingDINO + SAM2 (+ optional VLM) on its frames and projects
+`src/vision/vision_detector.py` runs GroundingDINO + SAM2 on its frames and projects
 mask centroids onto the known table plane ([demo_task.md](demo_task.md#3-frames-and-the-vision-contract)).
 
 ## 1. Hardware Identification & System Profile

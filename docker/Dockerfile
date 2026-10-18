@@ -9,6 +9,9 @@ ARG USERNAME=dev
 ARG UID=1000
 ARG GID=1000
 ARG PYTHON_VERSION=3.11
+# Object vision (GroundingDINO + SAM2 + torch): opt-in, large. `ROBOTOKENS_VISION=1 docker/dev.sh build`.
+ARG VISION=0
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -67,7 +70,22 @@ WORKDIR /workspace
 
 # Install dependencies only (not the project), so this layer is cached until
 # pyproject.toml / uv.lock change. The project source comes from the bind mount.
-COPY --chown=${UID}:${GID} pyproject.toml uv.lock /tmp/deps/
-RUN cd /tmp/deps && uv sync --frozen --no-install-project --extra hardware --extra dev && rm -rf /tmp/deps
+COPY --chown=${UID}:${GID} pyproject.toml uv.lock requirements-vision.txt /tmp/deps/
+RUN cd /tmp/deps && uv sync --frozen --no-install-project --extra hardware --extra dev --extra calib && rm -rf /tmp/deps/.venv
+
+# Optional vision stack. torch first (CUDA wheels from TORCH_INDEX_URL), then GroundingDINO and SAM2
+# built against it (--no-build-isolation). No CUDA toolkit in the image: both build their PyTorch
+# paths only (src/vision/object_localizer.py routes GroundingDINO's deformable attention through
+# its PyTorch fallback). Installed with `uv pip`, so do not run `uv sync` in the container afterwards
+# (it would remove them); run scripts with `python`.
+RUN if [ "${VISION}" = "1" ]; then \
+        cd /tmp/deps && \
+        uv pip install --python /opt/venv/bin/python torch torchvision --index-url ${TORCH_INDEX_URL} && \
+        uv pip install --python /opt/venv/bin/python setuptools wheel && \
+        SAM2_BUILD_CUDA=0 uv pip install --python /opt/venv/bin/python --no-build-isolation -r requirements-vision.txt && \
+        (uv pip uninstall --python /opt/venv/bin/python opencv-python opencv-python-headless || true) && \
+        uv pip install --python /opt/venv/bin/python --reinstall "opencv-contrib-python>=4.9.0" && \
+        /opt/venv/bin/python -c "import cv2, torch, groundingdino, sam2; assert hasattr(cv2.aruco, 'CharucoDetector'); print('vision stack OK, torch', torch.__version__)"; \
+    fi && rm -rf /tmp/deps
 
 CMD ["bash"]

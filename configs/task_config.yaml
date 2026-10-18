@@ -9,7 +9,9 @@ task:
 vision:
   source: "hbv_hd_camera" # options: "mock", "hbv_hd_camera", "opencv", "stream"
   camera_device: "HBV HD CAMERA" # Model ID: UVC Camera 0x0ac8:0x0346
-  device_index: 1 # Typically 1 on macOS (0 is MacBook camera)
+  # Camera index used by the calibration scripts AND the object detector (one source of truth).
+  # HBV camera on the Linux robot PC: /dev/video2 -> 2 (check `v4l2-ctl --list-devices`). macOS: usually 1.
+  device_index: 2
   width: 1280
   height: 720
   fps: 30
@@ -32,6 +34,27 @@ vision:
     # Calibration nominal offsets in robot base frame (meters)
     left_nominal_offset: [0.35, 0.18, 0.55]
     right_nominal_offset: [0.35, -0.18, 0.55]
+
+  # Object localization for the demo (src/vision/vision_detector.py): GroundingDINO + SAM2 on
+  # the HBV camera, mapped to the robot base frame by configs/camera_extrinsics.yaml, which
+  # scripts/calibrate_camera_touch.py or calibrate_table_tape.py write (docs/camera_calibration.md).
+  object_detection:
+    calibration_path: "configs/camera_extrinsics.yaml"
+    frames: 3                     # frames fused per detection poll
+    merge_radius_m: 0.04          # detections closer than this across frames are the same object
+    min_frame_fraction: 0.5       # keep objects seen in at least half of the frames
+    color_correct: true           # gray-world white balance (the HBV sensor has a blue cast)
+    object_top_height_m: {"can": 0.12, "box": 0.10}   # top-face height above the table, by prompt word
+    default_top_height_m: 0.12
+    workspace: {x: [0.12, 0.45], y: [-0.05, 0.45]}     # base frame; detections outside are ignored
+    localizer:                    # src/vision/object_localizer.py ObjectLocalizer(**localizer)
+      sam2_size: "small"          # "small" or "large"
+      device: "cuda"              # falls back to CPU without CUDA
+      box_threshold: 0.35
+      text_threshold: 0.25
+      infer_size: 480
+      tilt_deg: 20.0              # ObjectLocalizer default (top-face rectification, rect_face_pca.rectify_homography)
+      # focal_px: unset = the measured fx from configs/camera_extrinsics.yaml
 
 # Planning Parameters (RobotBlockSet & OMPL)
 planning:

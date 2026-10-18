@@ -30,6 +30,12 @@ dev = [
 hardware = [
     "openarm_can @ git+https://github.com/enactic/openarm_can.git@1.4.0#subdirectory=python ; sys_platform == 'linux'",
 ]
+# Camera calibration and the vision tests (OpenCV with the aruco/ChArUco contrib modules).
+calib = [
+    "opencv-contrib-python>=4.9.0",
+]
+# GroundingDINO + SAM2 object localization: not listed here (they need torch at build time,
+# which breaks `uv lock`). Install on the vision machine with requirements-vision.txt.
 rbs = [
     "robotblockset>=0.2.0",
     "ompl>=2.0.0",

@@ -23,6 +23,8 @@ services:
       args:
         UID: ${HOST_UID:-1000}
         GID: ${HOST_GID:-1000}
+        VISION: ${ROBOTOKENS_VISION:-0}        # 1 = torch + GroundingDINO + SAM2 (requirements-vision.txt)
+        TORCH_INDEX_URL: ${ROBOTOKENS_TORCH_INDEX:-https://download.pytorch.org/whl/cu128}
     volumes:
       - ..:/workspace
       - /tmp/.X11-unix:/tmp/.X11-unix:rw

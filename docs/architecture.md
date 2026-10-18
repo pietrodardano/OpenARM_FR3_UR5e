@@ -8,7 +8,7 @@ torques; the task layer decides and acts. The task spec is in [demo_task.md](dem
 
 ```mermaid
 graph TD
-    subgraph Perception ["1. Perception (vision branch)"]
+    subgraph Perception ["1. Perception (src/vision)"]
         Cam["RGB camera, torso mount"]
         DINO["GroundingDINO: boxes from text prompt"]
         SAM["SAM2: masks"]
@@ -44,7 +44,7 @@ graph TD
 The task layer only knows the three Protocols in
 [src/task/interfaces.py](../src/task/interfaces.py). The robot side is
 [src/task/openarm_adapter.py](../src/task/openarm_adapter.py); vision is mocked from
-`demo.manual_objects` ([src/task/mocks.py](../src/task/mocks.py)) until the vision branch is merged.
+`VisionObjectDetector` ([src/vision/vision_detector.py](../src/vision/vision_detector.py)); `demo.manual_objects` is the manual fallback.
 
 ---
 
@@ -57,7 +57,8 @@ rotation $R_C^R$ and camera center $c$ (from the ChArUco extrinsic calibration):
 $$d = R_C^R\, K^{-1} [u,\; v,\; 1]^T, \qquad p = c + \lambda d, \qquad \lambda = \frac{z_{plane} - c_z}{d_z}$$
 
 $(u, v)$ is the SAM2 mask centroid. $z_{plane}$ is the table top, or the plane through
-the object's visible center height, consistently. The vision branch owns this step and
+the object's visible center height, consistently. `VisionObjectDetector` uses the top-face centroid at
+table + object height and
 delivers $(x, y)$ in the robot base frame. The task layer adds the grasp height:
 $z_{grasp} = z_{table} + h_{grasp}$.
 
