@@ -1,0 +1,141 @@
+# RoboTokens configuration: one file, every value in one place (src/robotokens/config.py).
+# Frame: robot base frame of the official OpenArm v1 model (+X forward, +Y left, +Z up,
+# origin at openarm_body_link0). Angles in rad unless the key says _deg.
+
+robot:
+  side: left                       # the one arm we drive (the right arm is broken)
+  model_path: third_party/openarm_mujoco/v1/openarm_bimanual.xml   # cloned by setup.sh
+  home_qpos: [0.0, 0.0, 0.0, 1.570796, 0.0, 0.0, 0.0]   # hand forward, elbow 90 deg
+  rest_qpos: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]        # hanging; start/end of every run
+  # Joint route beside the table between rest (hand below the tabletop, right behind its rear
+  # edge) and home: 1) straight arm swung out (joint 2), 2) elbow bent. Left-arm values.
+  side_route_qpos:
+    - [0.0, -1.05, 0.0, 0.0, 0.0, 0.0, 0.0]
+    - [0.0, -1.05, 0.0, 1.3, 0.0, 0.0, 0.0]
+
+hardware:                          # one arm on one CAN bus (openarm_can, MIT mode)
+  can_interface: can1              # left = can1, right = can0 (openarm_ros2 defaults)
+  can_fd: true
+  motor_types: [DM8009, DM8009, DM4340, DM4340, DM4310, DM4310, DM4310]
+  send_can_ids: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]
+  recv_can_ids: [0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17]
+  kp: [70.0, 70.0, 70.0, 60.0, 10.0, 10.0, 10.0]   # official v1 control_gains.yaml
+  kd: [2.75, 2.5, 2.0, 2.0, 0.7, 0.6, 0.5]
+  control_rate_hz: 250
+  recv_timeout_us: 300
+  max_joint_velocity_rad_s: [1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 2.0]   # SR1
+  joint_limit_margin_rad: 0.02                                     # SR1
+  startup_limit_tolerance_rad: 0.15  # SR2: refuse to start (bad zero calibration)
+  max_tracking_error_rad: 0.5        # SR3: sustained |setpoint - measured| => fault
+  tracking_error_time_s: 0.3
+  missing_reply_time_s: 0.1          # SR3
+  rest_duration_s: 4.0               # stop(): move to rest_qpos, then disable
+  gravity_compensation_scale: 1.0    # model gravity feedforward (validated at 1.0)
+  realtime_priority: 0               # >0 requests SCHED_FIFO for the servo thread
+
+gripper:                           # DM4310 on the same bus; 0 rad = closed
+  motor_type: DM4310
+  send_can_id: 0x08
+  recv_can_id: 0x18
+  kp: 5.0
+  kd: 0.1
+  motor_open_rad: -1.0472          # motor angle at full opening
+  open_m: 0.044                    # full finger opening (m)
+  max_velocity_m_s: 0.022          # SR1: full stroke in 2 s
+  # Torque mode (MIT kp = 0): squeeze ~12 N per Nm. 1.0 Nm holds a full upright can and does
+  # not crush an empty one (measured 2026-10-17).
+  max_torque_nm: 1.0               # SR5
+  torque_kd: 0.3
+  torque_rate_nm_s: 4.0            # SR5
+  # Grasp: closing speed regulated at approach_speed until contact, then grasp_torque_nm.
+  approach_speed_mm_s: 15.0
+  approach_max_torque_nm: 0.6
+  approach_ramp_nm_s: 1.5
+  grasp_torque_nm: 1.0
+  min_held_opening_m: 0.001        # closed further than this = nothing grasped
+
+motion:                            # Cartesian moveL + checks (SR4)
+  rate_hz: 50
+  peak_speed_m_s: 0.08
+  peak_rot_speed_rad_s: 0.6
+  min_move_s: 1.5
+  joint_speed_deg_s: 15.0
+  ik_iters: 30
+  max_ik_pos_error_m: 0.005
+  max_ik_rot_error_rad: 0.035
+  check_points: 8
+  table_margin_m: 0.035            # arm bodies stay this far above the table
+  collision_clearance_m: 0.01      # arm geoms vs torso, table, bins, other arm
+  workspace: {low: [0.15, -0.15, 0.15], high: [0.65, 0.55, 0.90]}   # TCP box
+
+workcell:                          # measured; world = floor under the torso
+  arm_mount_height_m: 1.330        # shoulder axis above the floor
+  torso: {width_m: 0.060, height_m: 1.420}
+  table: {top_height_m: 0.725, thickness_m: 0.040, length_m: 1.200, width_m: 0.800, center_x_m: 0.650}
+  # Bins on the table, robot's left = +Y. Cans in the back row, bins in the front row.
+  bins:
+    left:  {x: 0.32, y: 0.26, inner_size_m: 0.09, wall_height_m: 0.05}
+    right: {x: 0.32, y: 0.12, inner_size_m: 0.09, wall_height_m: 0.05}
+  # Nominal camera mount (used when configs/camera_extrinsics.yaml does not exist).
+  camera: {forward_offset_m: 0.070, height_above_torso_m: 0.180, pitch_down_deg: 64.0}   # 70 (CAD) missed a can by 8 cm short: fitted 2026-10-18
+
+camera:                            # HBV HD CAMERA (UVC 0ac8:0346), RGB only
+  device_index: 2                  # /dev/video2 on the robot PC (v4l2-ctl --list-devices)
+  width: 1280
+  height: 720
+  rotate_180: true                 # mounted upside down
+  color_correct: true              # gray-world white balance (blue cast)
+  intrinsics_path: configs/camera_intrinsics.yaml   # `robotokens calib intrinsics`
+  extrinsics_path: configs/camera_extrinsics.yaml   # `robotokens calib touch`; absent = nominal mount
+
+vision:                            # GroundingDINO + SAM2 (weights/)
+  frames: 3                        # frames fused per detection
+  merge_radius_m: 0.04
+  min_frame_fraction: 0.5
+  object_top_height_m: {can: 0.12, aluminum: 0.12, box: 0.10}   # by detection label (GroundingDINO says "aluminum")
+  default_top_height_m: 0.12
+  workspace: {x: [0.12, 0.45], y: [-0.05, 0.45]}
+  sam2_size: small                 # small | large
+  device: cuda                     # falls back to CPU
+  box_threshold: 0.35
+  text_threshold: 0.25
+  infer_size: 480
+  tilt_deg: 24.0                   # camera tilt off nadir (= 90 - 66 deg from calib touch 2026-10-18)
+
+task:
+  prompt: "Sort the two cans: put the lighter one in the left bin."
+  object_prompt: "aluminum can . box"   # instruction names neither; tested on the real cans (0.44-0.54)
+  min_confidence: 0.35
+  manual_objects:                  # --objects manual (and the fake run)
+    - {x: 0.21, y: 0.13}
+    - {x: 0.21, y: 0.27}
+  grasp: {pitch_deg: 45.0, height_above_table_m: 0.08}   # lateral squeeze of an upright can
+  approach_distance_m: 0.06        # pre-grasp stand-off back along the finger axis
+  approach_clearance_m: 0.15       # vertical lift after a grasp / descent before a release
+  place_back_offset_m: 0.008
+  release_settle_s: 0.5
+  bin_release_above_table_m: 0.11
+  handover: {x: 0.40, y: 0.20, above_table_m: 0.38, pitch_deg: 45.0}
+  weigh:
+    pose: {x: 0.32, y: 0.20, above_table_m: 0.30, pitch_deg: 45.0}   # same pose for both objects
+    settle_s: 1.0
+    dither_deg: 1.0                # dither cancels joint friction
+    dither_period_s: 2.0
+    dither_cycles: 3
+    min_z: 3.0                     # FR4: |diff| / combined SE needed to act
+    remeasure_once: true
+  contact:                         # FR6: release only on felt external contact
+    baseline_s: 1.0
+    k_sigma: 4.0
+    min_delta_nm: 0.25
+    hold_s: 0.15
+    timeout_s: 20.0
+    rate_hz: 100.0
+
+twin:
+  rate_hz: 30.0
+
+fake:                              # `--fake`: FakeBus instead of CAN (no hardware)
+  masses_kg: [0.36, 0.06]          # payload of the 1st / 2nd grasped object
+  object_width_m: 0.066            # fingers stop at this jaw width when closing
+  torque_noise_nm: 0.02

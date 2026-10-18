@@ -1,9 +1,10 @@
 # HBV HD CAMERA (Workcell RGB Camera)
 
-The only perception sensor of the demo: an RGB camera (no depth) fixed on the torso
-mount, looking forward and 20° down at the table ([physical_workcell.md](physical_workcell.md)).
-`src/vision/vision_detector.py` runs GroundingDINO + SAM2 on its frames and projects
-mask centroids onto the known table plane ([demo_task.md](demo_task.md#3-frames-and-the-vision-contract)).
+The only perception sensor of the demo: an RGB camera (no depth) on the torso mount, 7 cm in
+front of and 18 cm above the torso, pitched 70° down from horizontal (20° off straight down);
+see `workcell.camera` in `configs/robotokens.yaml`. `src/robotokens/vision/` runs GroundingDINO +
+SAM2 on its frames and intersects the top-face centroid ray with the plane of the object's top.
+Measured intrinsics: `configs/camera_intrinsics.yaml` (fx 709 px, fy 713 px, vertical FOV 53.6°).
 
 ## 1. Hardware Identification & System Profile
 
@@ -30,7 +31,7 @@ Extracted directly via macOS hardware subsystem (`system_profiler SPCameraDataTy
   - `yuyv422`
   - `nv12`
   - `0rgb` / `bgr0`
-- **Field of View (FOV):** Wide-angle lens (approx. 90°–120° DFOV typical for HBVCAM modules); the scene model uses a provisional 70° vertical FOV until intrinsic calibration
+- **Field of View (FOV):** Wide-angle lens (approx. 90°–120° DFOV typical for HBVCAM modules); measured vertical FOV 53.6° at 1280x720 (`configs/camera_intrinsics.yaml`).
 - **Mounting Note:** If the module is mounted upside down on the torso bracket, apply a 180° rotation in software (`vision.rotate_180`) before calibration and detection.
 
 ---

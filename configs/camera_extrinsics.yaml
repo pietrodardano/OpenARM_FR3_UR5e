@@ -1,0 +1,21 @@
+generated: '2026-10-18T09:34:22'
+method: robot_touch (rotation fit, measured mount position)
+session: runs/touch-20261018-092435
+points_agreeing: 34
+median_residual_px: 10.690256231800689
+point_cloud_thickness_mm: 18.613158091357956
+frame: robot base (+x forward, +y left, +z up)
+position_m:
+- 0.07
+- 0.0
+- 0.9669999999999997
+rotation_opencv:
+- - 0.0262722412181916
+  - -0.9135321402776826
+  - 0.40591723050524675
+- - -0.9996487942571989
+  - -0.022598203296189712
+  - 0.013842302839934564
+- - -0.003472388443353399
+  - -0.40613833836201746
+  - -0.9138050079918789

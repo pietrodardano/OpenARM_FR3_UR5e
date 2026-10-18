@@ -4,43 +4,84 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "robotokens"
-version = "0.1.0"
-description = "Vision finds look-alike objects; OpenArm joint torques tell full from empty"
+version = "0.2.0"
+description = "Vision finds look-alike objects; OpenArm joint torques tell heavy from light"
 readme = "README.md"
-authors = [{ name = "RoboTokens Hackathon Team" }]
 license = { text = "Apache-2.0" }
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "numpy>=1.22.0",
-    "scipy>=1.9.0",
+    "numpy>=1.26",
+    "scipy>=1.11",
     "pyyaml>=6.0",
-    "mujoco>=3.2.0",
-    # Differential IK on the official OpenArm MuJoCo model (src/planning/openarm_ik.py).
-    "mink>=0.0.11",
-    "daqp>=0.6.0",
+    "mujoco>=3.2",
+    "mink>=1.0",  # differential IK on the official OpenArm MuJoCo model
+    "daqp>=0.6",  # QP solver used by mink
+    "opencv-contrib-python>=4.9",  # camera, ChArUco (cv2.aruco), PnP
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
-]
-# Real-robot I/O: official OpenArm SocketCAN SDK Python binding, built from the
-# pinned upstream tag (needs cmake + a C++17 compiler; Linux only).
+[project.scripts]
+robotokens = "robotokens.cli:main"
+
+[dependency-groups]
+# Real robot: official OpenArm SocketCAN SDK Python binding (builds with cmake + g++).
 hardware = [
-    "openarm_can @ git+https://github.com/enactic/openarm_can.git@1.4.0#subdirectory=python ; sys_platform == 'linux'",
+    "openarm_can @ git+https://github.com/enactic/openarm_can.git@1.4.0#subdirectory=python",
 ]
-# Camera calibration and the vision tests (OpenCV with the aruco/ChArUco contrib modules).
-calib = [
-    "opencv-contrib-python>=4.9.0",
+# GroundingDINO + SAM2 with the weights in weights/ (commits validated on main).
+vision = [
+    "torch>=2.7",
+    "torchvision>=0.22",
+    "transformers==4.49.*",  # validated with GroundingDINO; 5.x removed BERT methods it uses
+    "groundingdino @ git+https://github.com/IDEA-Research/GroundingDINO.git@856dde20aee659246248e20734ef9ba5214f5e44",
+    "sam-2 @ git+https://github.com/facebookresearch/sam2.git@2b90b9f5ceec907a1c18123530e92e794ad901a4",
 ]
-# GroundingDINO + SAM2 object localization: not listed here (they need torch at build time,
-# which breaks `uv lock`). Install on the vision machine with requirements-vision.txt.
-rbs = [
-    "robotblockset>=0.2.0",
-    "ompl>=2.0.0",
-]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+# `uv run` keeps all three groups installed (setup.sh --no-hw / --no-group hardware to skip one).
+default-groups = ["hardware", "vision", "dev"]
+# GroundingDINO pulls in plain opencv-python, which shadows cv2.aruco from the contrib build.
+override-dependencies = ["opencv-python ; sys_platform == 'never'"]
+
+# Static metadata of the two git packages (copied from their setup.py) so uv can lock without
+# building them; required for match-runtime below.
+[[tool.uv.dependency-metadata]]
+name = "groundingdino"
+version = "0.1.0"
+requires-dist = ["torch", "torchvision", "transformers", "addict", "yapf", "timm", "numpy",
+                 "supervision>=0.22.0", "pycocotools"]
+
+[[tool.uv.dependency-metadata]]
+name = "sam-2"
+version = "1.0"
+requires-python = ">=3.10.0"
+requires-dist = ["torch>=2.5.1", "torchvision>=0.20.1", "numpy>=1.24.4", "tqdm>=4.66.1",
+                 "hydra-core>=1.3.2", "iopath>=0.1.10", "pillow>=9.4.0"]
+
+[tool.uv.extra-build-dependencies]
+# GroundingDINO / SAM2 import torch in setup.py; build them against the torch that gets installed.
+groundingdino = ["setuptools", { requirement = "torch", match-runtime = true }]
+sam-2 = ["setuptools", { requirement = "torch", match-runtime = true }]
+
+[tool.uv.extra-build-variables]
+sam-2 = { SAM2_BUILD_CUDA = "0" }  # optional CUDA post-processing extension; no nvcc here
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
+markers = [
+    "vision: needs torch, GroundingDINO, SAM2 and weights/ (run with -m vision)",
+    "hardware: needs the real robot on CAN (run with -m hardware)",
+]
+addopts = "-m 'not vision and not hardware'"
