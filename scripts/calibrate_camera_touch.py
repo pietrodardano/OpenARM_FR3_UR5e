@@ -61,7 +61,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from calibrate_table_tape import (  # noqa: E402
     WINDOW, draw_table_grid, draw_zoom_inset, load_config, load_intrinsics, pixel_to_table,
-    plane_homography, probe_devices, rotation_to_quat, verify_interactive, write_extrinsics,
+    open_camera, plane_homography, rotation_to_quat, verify_interactive, write_extrinsics,
 )
 
 MIN_POINTS = 6
@@ -83,15 +83,9 @@ def read_tcp_position(cfg: dict, side: str) -> np.ndarray:
     return poses[side][0].copy()
 
 
-def capture_frame(device: int, width: int, height: int, rotate_180: bool) -> np.ndarray:
-    cap = cv2.VideoCapture(device)
-    if not cap.isOpened():
-        working = probe_devices()
-        raise SystemExit(f"Could not open camera index {device}. "
-                         + (f"These opened: {working}; re-run with --device {working[0]}."
-                            if working else "Check `ls /dev/video*` and permissions."))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+def capture_frame(device, width: int, height: int, rotate_180: bool,
+                  name_hint: str | None = None, fallback_index: int | None = None) -> np.ndarray:
+    cap, _index, _w, _h = open_camera(device, width, height, name_hint, fallback_index)
     frame = None
     try:
         for _ in range(5):
@@ -121,7 +115,7 @@ def planarity_mm(points: np.ndarray) -> float:
 
 def collect_samples(args: argparse.Namespace, cfg: dict) -> tuple[np.ndarray, list[np.ndarray]]:
     vision = cfg.get("vision", {}) or {}
-    device = args.device if args.device is not None else int(vision.get("device_index", 0))
+    device = args.device
     width, height = int(vision.get("width", 1280)), int(vision.get("height", 720))
     rotate = vision.get("rotate_180", False) if args.rotate_180 is None else args.rotate_180
 
@@ -156,7 +150,8 @@ def collect_samples(args: argparse.Namespace, cfg: dict) -> tuple[np.ndarray, li
             continue
 
         tcp = read_tcp_position(cfg, args.side)
-        frame = capture_frame(device, width, height, rotate)
+        frame = capture_frame(device, width, height, rotate, vision.get("camera_device"),
+                              vision.get("device_index"))
         points.append(tcp)
         frames.append(frame)
         current = np.array(points)
