@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoboTokens dashboard</title>
+<style>
+  :root {
+    --bg:#0b0f17; --card:#121826; --card2:#171f30; --ink:#e6ebf5; --muted:#8b96ab; --line:#232c3f;
+    --teal:#4fc3bd; --orange:#f0a93e; --green:#34c77b; --amber:#f0a93e; --red:#ef5b5b; --accent:#6aa7ff;
+    color-scheme: dark;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); font:14px/1.5 Inter,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; font-variant-numeric:tabular-nums;
+         background:radial-gradient(1200px 600px at 85% -10%, rgba(79,195,189,.10), transparent 60%), radial-gradient(900px 500px at -10% 10%, rgba(106,167,255,.08), transparent 60%), var(--bg); min-height:100vh; }
+  header { display:flex; align-items:center; gap:18px; padding:12px 26px; background:rgba(11,15,23,.78); backdrop-filter:blur(14px); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  header::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:linear-gradient(90deg,var(--teal),var(--accent) 50%,var(--orange)); opacity:.75; }
+  header .logo { background:#f4f7fb; border-radius:12px; padding:5px 12px; display:flex; box-shadow:0 0 0 1px rgba(255,255,255,.06); }
+  header .logo img { height:42px; }
+  header h1 { font-size:16px; margin:0; font-weight:700; letter-spacing:.2px; }
+  header .sub { color:var(--muted); font-size:12.5px; }
+  header .right { margin-left:auto; display:flex; align-items:center; gap:16px; font-size:12.5px; color:var(--muted); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:7px; box-shadow:0 0 0 0 rgba(52,199,123,.6); animation:pulse 2s infinite; }
+  .dot.off { background:var(--red); animation:none; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(52,199,123,.55)} 70%{box-shadow:0 0 0 8px rgba(52,199,123,0)} 100%{box-shadow:0 0 0 0 rgba(52,199,123,0)} }
+  #demo { display:none; background:linear-gradient(90deg,#c9821c,#f0a93e); color:#1b1204; text-align:center; font-weight:800; padding:5px; letter-spacing:.6px; font-size:12px; }
+  main { padding:20px 26px 44px; display:grid; grid-template-columns:repeat(12,1fr); gap:16px; max-width:1520px; margin:0 auto; }
+  .card { background:linear-gradient(180deg,var(--card2),var(--card)); border:1px solid var(--line); border-radius:16px; padding:16px 18px; box-shadow:0 8px 28px rgba(0,0,0,.35); min-width:0; }
+  .card h2 { margin:0 0 12px; font-size:11.5px; text-transform:uppercase; letter-spacing:1.1px; color:var(--muted); font-weight:700; display:flex; align-items:center; gap:8px; }
+  .card h2::before { content:""; width:6px; height:6px; border-radius:2px; background:linear-gradient(135deg,var(--teal),var(--accent)); }
+  .card h2 .hint { margin-left:auto; text-transform:none; letter-spacing:0; font-weight:400; font-size:12px; }
+  .c12 { grid-column:span 12; } .c7 { grid-column:span 7; } .c6 { grid-column:span 6; } .c5 { grid-column:span 5; } .c4 { grid-column:span 4; }
+  @media (max-width:1000px) { .c7,.c6,.c5,.c4 { grid-column:span 12; } }
+  .pill { display:inline-block; padding:4px 13px; border-radius:999px; color:#06100c; font-weight:800; font-size:12px; letter-spacing:.7px; text-transform:uppercase; }
+  .done { background:var(--green); box-shadow:0 0 18px rgba(52,199,123,.35); } .inconclusive { background:var(--amber); box-shadow:0 0 18px rgba(240,169,62,.3); }
+  .aborted { background:var(--red); color:#190606; box-shadow:0 0 18px rgba(239,91,91,.35); } .none { background:#6b7690; color:#0b0f17; }
+  .status { display:flex; flex-wrap:wrap; gap:30px; align-items:center; }
+  .status .big { font-size:18px; font-weight:700; letter-spacing:.1px; }
+  .kv { display:flex; flex-direction:column; } .kv > span:first-child { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.8px; margin-bottom:2px; }
+  .muted { color:var(--muted); } code { background:#1b2436; padding:1px 6px; border-radius:5px; font-size:12px; color:#b9c6e4; }
+  .cam { width:100%; aspect-ratio:16/9; background:#070a10; border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center; color:var(--muted); text-align:center; padding:0 20px; }
+  .cam img { width:100%; height:100%; object-fit:contain; }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; } .tabs button { border:1px solid var(--line); background:#161e2f; padding:4px 12px; border-radius:8px; cursor:pointer; font-size:12px; color:var(--muted); transition:.15s; }
+  .tabs button:hover { color:var(--ink); } .tabs button.on { background:var(--accent); color:#06101f; border-color:var(--accent); font-weight:700; }
+  svg text { font-family:inherit; }
+  .legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:8px; font-size:12px; color:var(--muted); }
+  .legend i { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 12px; }
+  .chip { padding:3px 10px; border-radius:8px; background:#1b2436; font-size:12px; color:var(--muted); border:1px solid transparent; }
+  .chip.sel { background:rgba(79,195,189,.15); color:var(--teal); border-color:rgba(79,195,189,.5); }
+  .chip.bad { background:rgba(239,91,91,.15); color:var(--red); border-color:rgba(239,91,91,.5); } .chip.warn { background:rgba(240,169,62,.15); color:var(--amber); border-color:rgba(240,169,62,.5); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; color:var(--muted); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.8px; padding:7px 10px; border-bottom:1px solid var(--line); }
+  td { padding:9px 10px; border-bottom:1px solid #1a2233; vertical-align:top; }
+  tr.run { cursor:pointer; transition:.12s; } tr.run:hover { background:#161e2f; } tr.run.sel { background:rgba(79,195,189,.10); box-shadow:inset 3px 0 0 var(--teal); }
+  .log { max-height:230px; overflow:auto; font:12.5px/1.65 ui-monospace,"SF Mono",Menlo,Consolas,monospace; background:#0d121d; border:1px solid var(--line); border-radius:10px; padding:9px 13px; }
+  .log b { color:var(--teal); display:inline-block; min-width:100px; font-weight:600; }
+  .sim { display:grid; grid-template-columns:1fr 1fr; gap:14px; align-items:start; } @media (max-width:1000px) { .sim { grid-template-columns:1fr; } }
+  .sim img { width:100%; border-radius:12px; border:1px solid var(--line); background:#fff; }
+  .note { font-size:12px; color:var(--muted); margin-top:10px; }
+  label.follow { display:flex; align-items:center; gap:7px; cursor:pointer; } input[type=checkbox] { accent-color:var(--teal); }
+  .livebar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:8px; }
+  .livebar .tabs { margin:0; } button.ghost { border:1px solid var(--line); background:#161e2f; color:var(--muted); border-radius:8px; padding:4px 12px; cursor:pointer; font-size:12px; }
+  button.ghost:hover { color:var(--ink); }
+  #liveCanvas { width:100%; height:340px; display:block; background:#0d121d; border:1px solid var(--line); border-radius:12px; }
+  .lchip { cursor:pointer; user-select:none; display:inline-flex; gap:7px; align-items:center; padding:3px 10px; border-radius:8px; background:#1b2436; border:1px solid transparent; font-size:12px; color:var(--muted); }
+  .lchip i { width:9px; height:9px; border-radius:50%; display:inline-block; } .lchip.off { opacity:.4; } .lchip b { color:var(--ink); font-weight:600; min-width:52px; text-align:right; display:inline-block; }
+  .alert { padding:8px 12px; border-radius:10px; margin-bottom:10px; font-size:13px; font-weight:600; } .alert.bad { background:rgba(239,91,91,.15); color:var(--red); border:1px solid rgba(239,91,91,.5); } .alert.warn { background:rgba(240,169,62,.14); color:var(--amber); border:1px solid rgba(240,169,62,.5); }
+  ::-webkit-scrollbar { width:10px; height:10px; } ::-webkit-scrollbar-thumb { background:#27314a; border-radius:8px; } ::-webkit-scrollbar-track { background:transparent; }
+</style>
+</head>
+<body>
+<div id="demo">DEMO DATA: synthetic runs for previewing this dashboard, not experiment results</div>
+<header>
+  <div class="logo"><img src="/figures/logo.png" alt="RoboTokens" onerror="this.parentNode.style.display='none'"></div>
+  <div><h1>RoboTokens dashboard</h1><div class="sub">Vision is not enough: read-only view of vision, twin and physical estimates</div></div>
+  <div class="right">
+    <label class="follow"><input type="checkbox" id="follow" checked> follow latest run</label>
+    <span><span class="dot" id="live"></span><span id="liveText">connecting</span></span>
+  </div>
+</header>
+
+<main>
+  <section class="card c12">
+    <h2>Run status <span class="hint" id="runDir"></span></h2>
+    <div class="status" id="status"></div>
+  </section>
+
+  <section class="card c12" id="liveCard" style="display:none">
+    <h2>Live joint torques <span class="hint" id="liveHint"></span></h2>
+    <div id="liveAlert"></div>
+    <div class="livebar">
+      <div class="tabs" id="winTabs"></div>
+      <button class="ghost" id="pauseBtn">pause</button>
+      <div class="chips" id="liveChips" style="margin:0"></div>
+    </div>
+    <canvas id="liveCanvas" height="340"></canvas>
+    <div class="note">Motor-reported torque (Nm) from a passive, receive-only CAN listener: the same quantity the robot code reads as <code>ArmState.tau</code>. The gripper trace is in motor sign. The listener never transmits and never configures the bus.</div>
+  </section>
+
+  <section class="card c6">
+    <h2>Camera <span class="hint" id="camAge"></span></h2>
+    <div class="tabs" id="camTabs"></div>
+    <div class="cam" id="cam">waiting for a saved detection (run <code>robotokens detect</code>)</div>
+    <div class="note">Last saved detection image from <code>runs/detect/</code>. It is a snapshot, not live video: the dashboard never opens the camera.</div>
+  </section>
+
+  <section class="card c6">
+    <h2>Workcell twin (top view) <span class="hint">robot base frame: +X forward, +Y left</span></h2>
+    <svg id="map" viewBox="0 0 640 600" width="100%" role="img" aria-label="top view of the workcell"></svg>
+    <div class="legend">
+      <span><i style="background:var(--teal)"></i>light object</span>
+      <span><i style="background:var(--orange)"></i>heavy object</span>
+      <span><i style="background:#9aa3b2"></i>not classified</span>
+      <span>dashed box: vision workspace</span>
+    </div>
+  </section>
+
+  <section class="card c6">
+    <h2>Physical estimate: mass from joint torques <span class="hint">mass ± standard error</span></h2>
+    <svg id="mass" viewBox="0 0 640 230" width="100%" role="img" aria-label="mass estimates"></svg>
+    <div class="note">Absolute values carry model offsets (arm gravity model, cable drag). Both objects are measured the same way at the same pose, so the difference is the reliable output.</div>
+  </section>
+
+  <section class="card c6">
+    <h2>Decision <span class="hint" id="decHint"></span></h2>
+    <svg id="gauge" viewBox="0 0 640 120" width="100%" role="img" aria-label="z-score gauge"></svg>
+    <div id="decision"></div>
+    <h2 style="margin-top:14px">Phases</h2>
+    <div class="chips" id="chips"></div>
+    <div class="log" id="log"></div>
+  </section>
+
+  <section class="card c12">
+    <h2>Run history</h2>
+    <table><thead><tr><th>Run</th><th>Age</th><th>Instruction</th><th>Outcome</th><th>Masses</th><th>z</th><th>Placement</th></tr></thead><tbody id="history"></tbody></table>
+  </section>
+
+  <section class="card c12">
+    <h2>Simulation <span class="hint">MuJoCo, not live: cross-embodiment study (see README)</span></h2>
+    <div class="sim" id="sim"></div>
+    <div class="note">The same torque-weighing recipe simulated on OpenArm, UR5e and Franka FR3. Simulation results, not hardware data.</div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const COLOR = {heavy:"#f0a93e", light:"#4fc3bd", none:"#6b7690"};
+let state = null, selected = null, camTab = "detections.png", lastImgKey = "";
+
+function ago(sec) {
+  if (sec == null) return "";
+  if (sec < 90) return Math.round(sec) + " s ago";
+  if (sec < 5400) return Math.round(sec / 60) + " min ago";
+  return Math.round(sec / 3600) + " h ago";
+}
+const g = (kg) => kg == null ? "n/a" : (kg * 1000).toFixed(0) + " g";
+
+async function poll() {
+  try {
+    const r = await fetch("/api/state", {cache:"no-store"});
+    state = await r.json();
+    $("live").className = "dot"; $("liveText").textContent = "updated " + new Date().toLocaleTimeString();
+    if ($("follow").checked || selected == null || !state.runs.find((x) => x.id === selected)) selected = state.runs[0]?.id ?? null;
+    render();
+  } catch (e) { $("live").className = "dot off"; $("liveText").textContent = "server not reachable"; }
+}
+
+function run() { return state.runs.find((x) => x.id === selected) || null; }
+
+function render() {
+  $("demo").style.display = state.demo ? "block" : "none";
+  $("runDir").textContent = state.runs_dir;
+  renderStatus(); renderCamera(); renderMap(); renderMass(); renderDecision(); renderHistory(); renderSim();
+}
+
+function renderStatus() {
+  const r = run();
+  if (!r) { $("status").innerHTML = '<span class="pill none">no runs yet</span><span class="muted">Waiting for the first <code>runs/&lt;time&gt;/report.json</code>. Reports are written when a run finishes.</span>'; return; }
+  const rep = r.report, outcome = rep.outcome || "none";
+  const comp = rep.comparison;
+  const kv = (k, v) => `<div class="kv"><span>${k}</span><span>${v}</span></div>`;
+  $("status").innerHTML =
+    `<span class="pill ${esc(outcome)}">${esc(outcome)}</span>` +
+    kv("Instruction", `<span class="big">${esc(rep.intent.text)}</span>`) +
+    kv("Mode", esc(rep.intent.mode)) + kv("Run", esc(r.id)) + kv("Finished", ago(state.now - r.mtime)) +
+    (comp ? kv("Heavier", esc(comp.heavier)) : "") +
+    (rep.handover_confirmed != null ? kv("Handover", rep.handover_confirmed ? "felt, released" : "no contact, kept") : "") +
+    (rep.error ? kv("Error", `<span style="color:var(--red)">${esc(rep.error)}</span>`) : "");
+}
+
+function renderCamera() {
+  const imgs = state.images, names = Object.keys(imgs).filter((n) => imgs[n]);
+  $("camTabs").innerHTML = names.map((n) => `<button class="${n === camTab ? "on" : ""}" data-n="${n}">${n === "detections.png" ? "annotated" : "raw frame"}</button>`).join("");
+  document.querySelectorAll("#camTabs button").forEach((b) => b.onclick = () => { camTab = b.dataset.n; renderCamera(); });
+  if (!names.length) { $("camAge").textContent = ""; return; }
+  if (!imgs[camTab]) camTab = names[0];
+  const im = imgs[camTab], key = camTab + im.mtime;
+  $("camAge").textContent = "saved " + ago(state.now - im.mtime);
+  if (key !== lastImgKey) { $("cam").innerHTML = `<img src="${im.url}?t=${im.mtime}" alt="camera detection">`; lastImgKey = key; }
+}
+
+function renderMap() {
+  const w = state.workcell, S = 1000, X = (y) => (0.52 - y) * S, Y = (x) => (0.52 - x) * S;
+  const rect = (x0, x1, y0, y1, a) => `<rect x="${X(y1)}" y="${Y(x1)}" width="${(y1 - y0) * S}" height="${(x1 - x0) * S}" ${a}/>`;
+  const t = w.table; let s = "";
+  s += rect(t.center_x_m - t.length_m / 2, t.center_x_m + t.length_m / 2, -t.width_m / 2, t.width_m / 2, 'fill="#2a2420" stroke="#4a3d33"');
+  for (const [m, b] of Object.entries(w.bins)) {
+    const h = b.inner_size_m / 2;
+    s += rect(b.x - h, b.x + h, b.y - h, b.y + h, 'fill="#10151f" stroke="#6aa7ff" stroke-width="2.5"');
+    s += `<text x="${X(b.y)}" y="${Y(b.x) + 5}" text-anchor="middle" font-size="15" fill="#e6ebf5" font-weight="700">${m.toUpperCase()}</text>`;
+    s += `<text x="${X(b.y)}" y="${Y(b.x) + h * S + 18}" text-anchor="middle" font-size="12" fill="#8b96ab">${m} bin</text>`;
+  }
+  const ws = w.workspace;
+  s += rect(ws.x[0], ws.x[1], ws.y[0], ws.y[1], 'fill="none" stroke="#4fc3bd" stroke-width="2" stroke-dasharray="8 6"');
+  s += `<text x="${X(ws.y[1]) + 8}" y="${Y(ws.x[1]) + 16}" font-size="12" fill="#4fc3bd">vision workspace</text>`;
+  if (w.weigh_pose) {
+    const px = X(w.weigh_pose.y), py = Y(w.weigh_pose.x);
+    s += `<path d="M${px - 11} ${py}H${px + 11}M${px} ${py - 11}V${py + 11}" stroke="#f0a93e" stroke-width="3"/><text x="${px}" y="${py - 46}" text-anchor="middle" font-size="12" fill="#f0a93e">weigh pose</text>`;
+  }
+  // robot base and camera
+  s += `<circle cx="${X(0)}" cy="${Y(0)}" r="34" fill="#243049" stroke="#6aa7ff" stroke-width="2"/><text x="${X(0)}" y="${Y(0) - 44}" text-anchor="middle" font-size="12" fill="#e6ebf5">OpenArm base</text>`;
+  const cam = w.camera;
+  s += `<path d="M${X(0) - 9} ${Y(cam.forward_offset_m) - 6}h18l-9 -14z" fill="#f0a93e"/><text x="${X(0) + 16}" y="${Y(cam.forward_offset_m) - 10}" font-size="12" fill="#8b96ab">camera</text>`;
+  // objects from the selected run
+  const r = run();
+  s += '<defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8b96ab"/></marker></defs>';
+  if (r) for (const o of r.report.objects) {
+    const cx = X(o.y), cy = Y(o.x), c = COLOR[o.weight_class || "none"], dest = r.report.placements[o.name];
+    if (dest && w.bins[dest]) {
+      const bx = X(w.bins[dest].y), by = Y(w.bins[dest].x), dx = cx - bx, dy = cy - by, L = Math.hypot(dx, dy) || 1, edge = w.bins[dest].inner_size_m * S * 0.5 + 14;
+      s += `<line x1="${cx}" y1="${cy}" x2="${bx + dx / L * edge}" y2="${by + dy / L * edge}" stroke="#8b96ab" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#ah)"/>`;
+    }
+    else if (dest === "user") s += `<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - 80}" stroke="#8b96ab" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#ah)"/><text x="${cx + 8}" y="${cy - 84}" font-size="12" fill="#8b96ab">to person</text>`;
+    s += `<circle cx="${cx}" cy="${cy}" r="33" fill="${c}" stroke="#10151f" stroke-width="3"/>`;
+    s += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="#06100c" font-weight="700" font-size="14">${o.mass ? g(o.mass.mass_kg) : "?"}</text>`;
+    s += `<text x="${cx}" y="${cy + 52}" text-anchor="middle" font-size="12" fill="#e6ebf5">${esc(o.name)}${o.weight_class ? " · " + o.weight_class : ""}</text>`;
+  }
+  s += `<text x="10" y="592" font-size="11" fill="#8b96ab">objects at the positions the robot believed (from the run report)</text>`;
+  $("map").innerHTML = s;
+}
+
+function renderMass() {
+  const r = run(), svg = $("mass");
+  if (!r || !r.report.objects.some((o) => o.mass)) { svg.innerHTML = '<text x="20" y="60" fill="#8b96ab" font-size="14">No mass estimate in this run.</text>'; return; }
+  const objs = r.report.objects.filter((o) => o.mass), maxv = Math.max(...objs.map((o) => o.mass.mass_kg + (o.mass.se_kg || 0))) * 1.25;
+  const x0 = 130, x1 = 610, sc = (kg) => x0 + (kg / maxv) * (x1 - x0);
+  let s = "";
+  const ticks = 5;
+  for (let i = 0; i <= ticks; i++) { const v = maxv * i / ticks, x = sc(v); s += `<line x1="${x}" y1="14" x2="${x}" y2="${objs.length * 70 + 14}" stroke="#222b3d"/><text x="${x}" y="${objs.length * 70 + 32}" text-anchor="middle" font-size="11" fill="#8b96ab">${(v * 1000).toFixed(0)} g</text>`; }
+  objs.forEach((o, i) => {
+    const y = 40 + i * 70, c = COLOR[o.weight_class || "none"], m = o.mass.mass_kg, se = o.mass.se_kg;
+    s += `<text x="10" y="${y + 5}" font-size="13" fill="#e6ebf5" font-weight="700">${esc(o.name)}</text><text x="10" y="${y + 22}" font-size="11" fill="#8b96ab">${o.weight_class || "unclassified"}</text>`;
+    s += `<rect x="${x0}" y="${y - 14}" width="${sc(m) - x0}" height="28" rx="5" fill="${c}"/>`;
+    if (se != null) s += `<path d="M${sc(m - se)} ${y - 18}V${y + 18}M${sc(m + se)} ${y - 18}V${y + 18}M${sc(m - se)} ${y}H${sc(m + se)}" stroke="#e6ebf5" stroke-width="2.4" fill="none"/>`;
+    s += `<text x="${Math.min(sc(m) + 8, 540)}" y="${y - 20}" font-size="12.5" fill="#e6ebf5" font-weight="700">${g(m)}${se != null ? " ± " + g(se) : " (SE unknown)"}</text>`;
+    (o.mass.cycle_mass || []).forEach((cm) => { s += `<circle cx="${sc(cm)}" cy="${y + 24}" r="3.2" fill="#e6ebf5" opacity=".55"/>`; });
+  });
+  svg.setAttribute("viewBox", `0 0 640 ${objs.length * 70 + 44}`);
+  svg.innerHTML = s;
+}
+
+function renderDecision() {
+  const r = run(), svg = $("gauge"), minz = state.workcell.min_z;
+  if (!r || !r.report.comparison) { svg.innerHTML = '<text x="20" y="50" fill="#8b96ab" font-size="14">No comparison in this run.</text>'; $("decision").innerHTML = ""; $("decHint").textContent = ""; renderPhases(r); return; }
+  const c = r.report.comparison, zmax = Math.max(minz * 2, (c.z || 0) * 1.15, 6), x0 = 20, x1 = 620, sx = (z) => x0 + Math.min(z, zmax) / zmax * (x1 - x0);
+  const ok = c.conclusive;
+  let s = `<rect x="${x0}" y="40" width="${sx(minz) - x0}" height="26" rx="5" fill="rgba(239,91,91,.28)"/><rect x="${sx(minz)}" y="40" width="${x1 - sx(minz)}" height="26" rx="5" fill="rgba(52,199,123,.25)"/>`;
+  s += `<line x1="${sx(minz)}" y1="30" x2="${sx(minz)}" y2="76" stroke="#e6ebf5" stroke-width="2.4"/><text x="${sx(minz)}" y="22" text-anchor="middle" font-size="12" fill="#e6ebf5">act if z ≥ ${minz}</text>`;
+  if (c.z != null) s += `<path d="M${sx(c.z)} 38l-8 -14h16z" fill="${ok ? "#34c77b" : "#f0a93e"}"/><text x="${Math.min(sx(c.z), 590)}" y="96" text-anchor="middle" font-size="13" font-weight="700" fill="#e6ebf5">z = ${c.z.toFixed(1)}</text>`;
+  else s += `<text x="20" y="96" font-size="13" fill="#8b96ab">z undefined (standard error unknown)</text>`;
+  s += `<text x="${x0}" y="114" font-size="11" fill="#8b96ab">0</text><text x="${x1}" y="114" text-anchor="end" font-size="11" fill="#8b96ab">${zmax.toFixed(0)}</text>`;
+  svg.innerHTML = s;
+  $("decHint").textContent = "z = Δm / combined SE";
+  $("decision").innerHTML = ok
+    ? `<b>Conclusive:</b> ${esc(c.heavier)} is heavier than ${esc(c.lighter)} by ${g(c.diff_kg)}. The robot acts on this difference.`
+    : `<b>Inconclusive:</b> the ${g(c.diff_kg)} difference is not large enough compared with the uncertainty. The robot re-measures, and if still unclear it puts the object back and does not guess.`;
+  renderPhases(r);
+}
+
+function renderPhases(r) {
+  if (!r) { $("chips").innerHTML = ""; $("log").innerHTML = ""; return; }
+  const log = r.report.phase_log || [], seen = [];
+  log.forEach(([p]) => { if (!seen.includes(p)) seen.push(p); });
+  const last = log.length ? log[log.length - 1][0] : null;
+  $("chips").innerHTML = seen.map((p) => `<span class="chip ${p === last ? (p === "aborted" ? "bad" : p === "inconclusive" ? "warn" : "sel") : ""}">${esc(p)}</span>`).join("");
+  $("log").innerHTML = log.map(([p, m]) => `<div><b>${esc(p)}</b>${esc(m)}</div>`).join("") || '<span class="muted">empty log</span>';
+}
+
+function renderHistory() {
+  $("history").innerHTML = state.runs.map((r) => {
+    const rep = r.report, comp = rep.comparison, objs = rep.objects.filter((o) => o.mass).map((o) => g(o.mass.mass_kg)).join(" / ");
+    const place = Object.entries(rep.placements || {}).map(([k, v]) => `${esc(k)} → ${esc(v)}`).join("<br>");
+    return `<tr class="run ${r.id === selected ? "sel" : ""}" data-id="${esc(r.id)}"><td>${esc(r.id)}</td><td>${ago(state.now - r.mtime)}</td><td>${esc(rep.intent.text)}</td>` +
+      `<td><span class="pill ${esc(rep.outcome)}">${esc(rep.outcome)}</span></td><td>${objs || "n/a"}</td><td>${comp && comp.z != null ? comp.z.toFixed(1) : "n/a"}</td><td>${place || (rep.error ? esc(rep.error) : "n/a")}</td></tr>`;
+  }).join("") || '<tr><td colspan="7" class="muted">no runs yet</td></tr>';
+  document.querySelectorAll("tr.run").forEach((tr) => tr.onclick = () => { selected = tr.dataset.id; $("follow").checked = false; render(); });
+}
+
+let simDone = false;
+function renderSim() {
+  if (simDone) return;
+  const f = state.figures; if (!f.includes("exploration.gif") && !f.includes("cross_embodiment_results.png")) return;
+  $("sim").innerHTML = (f.includes("exploration.gif") ? '<img src="/figures/exploration.gif" alt="three arms exploring two cans (simulation)">' : "") +
+    (f.includes("cross_embodiment_results.png") ? '<img src="/figures/cross_embodiment_results.png" alt="cross-embodiment results">' : "");
+  simDone = true;
+}
+
+$("follow").onchange = () => { if ($("follow").checked) { selected = state.runs[0]?.id ?? null; render(); } };
+poll(); setInterval(poll, 2000);
+
+// ---------- live torques (passive CAN tap; only shown when the server runs with --can / --live-demo) ----------
+const LIVE = {rows:[], names:[], tmax:[], seq:0, win:30, paused:false, on:null, status:null, q:{}, hidden:new Set()};
+const PALETTE = ["#6aa7ff","#4fc3bd","#34c77b","#f0a93e","#ef7b5b","#c58bff","#ff7fbf","#e6ebf5"];
+async function pollLive() {
+  try {
+    const r = await (await fetch("/api/live?since=" + LIVE.seq, {cache:"no-store"})).json();
+    if (!r.enabled) { $("liveCard").style.display = "none"; return; }
+    $("liveCard").style.display = "";
+    if (LIVE.names.join() !== r.names.join()) { LIVE.names = r.names; LIVE.tmax = r.t_max; buildLiveUi(); }
+    r.t.forEach((t, i) => LIVE.rows.push([t, r.tau[i]]));
+    LIVE.seq = r.seq; LIVE.status = r; LIVE.now = r.now;
+    const cut = r.now - 130; while (LIVE.rows.length && LIVE.rows[0][0] < cut) LIVE.rows.shift();
+    drawLive();
+  } catch (e) { /* server briefly away: keep what we have */ }
+}
+function buildLiveUi() {
+  $("winTabs").innerHTML = [10, 30, 60, 120].map((w) => `<button data-w="${w}" class="${w === LIVE.win ? "on" : ""}">${w} s</button>`).join("");
+  document.querySelectorAll("#winTabs button").forEach((b) => b.onclick = () => { LIVE.win = +b.dataset.w; buildLiveUi(); drawLive(); });
+  $("pauseBtn").onclick = () => { LIVE.paused = !LIVE.paused; $("pauseBtn").textContent = LIVE.paused ? "resume" : "pause"; drawLive(); };
+  $("liveChips").innerHTML = LIVE.names.map((n, i) => `<span class="lchip ${LIVE.hidden.has(i) ? "off" : ""}" data-i="${i}"><i style="background:${PALETTE[i % 8]}"></i>${n}<b id="lv${i}">n/a</b></span>`).join("");
+  document.querySelectorAll(".lchip").forEach((c) => c.onclick = () => { const i = +c.dataset.i; LIVE.hidden.has(i) ? LIVE.hidden.delete(i) : LIVE.hidden.add(i); buildLiveUi(); drawLive(); });
+}
+function niceTicks(lo, hi, n = 6) {
+  const span = hi - lo, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag, step = (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * mag;
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) out.push(+v.toFixed(6)); return out;
+}
+function drawLive() {
+  const st = LIVE.status; if (!st) return;
+  const cv = $("liveCanvas"), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const tEnd = LIVE.paused ? (LIVE.frozen ??= LIVE.now) : (LIVE.frozen = null, LIVE.now), t0 = tEnd - LIVE.win;
+  const rows = LIVE.rows.filter((r) => r[0] >= t0 && r[0] <= tEnd), L = 54, R = 12, T = 12, B = 26, pw = W - L - R, ph = H - T - B;
+  let lo = Infinity, hi = -Infinity;
+  rows.forEach((r) => r[1].forEach((v, i) => { if (v != null && !LIVE.hidden.has(i)) { lo = Math.min(lo, v); hi = Math.max(hi, v); } }));
+  if (!isFinite(lo)) { lo = -1; hi = 1; } if (hi - lo < 1) { const m = (hi + lo) / 2; lo = m - 0.5; hi = m + 0.5; }
+  const pad = (hi - lo) * 0.1; lo -= pad; hi += pad;
+  const X = (t) => L + (t - t0) / LIVE.win * pw, Y = (v) => T + (1 - (v - lo) / (hi - lo)) * ph;
+  ctx.font = "11px -apple-system, sans-serif"; ctx.fillStyle = "#8b96ab"; ctx.strokeStyle = "#222b3d"; ctx.lineWidth = 1;
+  niceTicks(lo, hi).forEach((v) => { const y = Y(v); ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(W - R, y); ctx.stroke(); ctx.textAlign = "right"; ctx.fillText(v.toFixed(Math.abs(v) < 10 ? 1 : 0), L - 6, y + 4); });
+  niceTicks(0, LIVE.win, 6).forEach((s) => { const x = X(tEnd - LIVE.win + s); ctx.textAlign = "center"; ctx.fillText(`-${(LIVE.win - s).toFixed(0)} s`, x, H - 8); });
+  if (lo < 0 && hi > 0) { ctx.strokeStyle = "#3a4560"; ctx.beginPath(); ctx.moveTo(L, Y(0)); ctx.lineTo(W - R, Y(0)); ctx.stroke(); }
+  ctx.save(); ctx.translate(14, T + ph / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = "center"; ctx.fillText("torque (Nm)", 0, 0); ctx.restore();
+  LIVE.names.forEach((n, i) => {
+    if (LIVE.hidden.has(i)) return;
+    ctx.strokeStyle = PALETTE[i % 8]; ctx.lineWidth = 1.7; ctx.beginPath(); let started = false;
+    rows.forEach((r) => { const v = r[1][i]; if (v == null) { started = false; return; } const x = X(r[0]), y = Y(v); started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true; });
+    ctx.stroke();
+  });
+  const last = rows.length ? rows[rows.length - 1][1] : null;
+  LIVE.names.forEach((n, i) => { const el = $("lv" + i); if (el) { const v = last ? last[i] : null; el.textContent = v == null ? "n/a" : v.toFixed(2) + " Nm"; } });
+  const alerts = [];
+  if (String(st.source).startsWith("SYNTHETIC")) alerts.push('<div class="alert warn">SYNTHETIC torque feed for previewing this panel, not the robot</div>');
+  if (st.error) alerts.push(`<div class="alert bad">${esc(st.error)}</div>`);
+  if (st.fault) alerts.push(`<div class="alert bad">Motor fault reported: ${esc(Object.entries(st.status_text).filter(([k]) => st.status[k] >= 8).map(([k, v]) => k + " " + v).join(", "))}</div>`);
+  if (st.stale_s == null) alerts.push('<div class="alert warn">No motor frames received yet. Is the arm powered and streaming, and is this the right interface?</div>');
+  else if (st.stale_s > 1.5) alerts.push(`<div class="alert warn">No motor frames for ${st.stale_s.toFixed(1)} s: the arm is idle or the tap is not seeing the bus.</div>`);
+  $("liveAlert").innerHTML = alerts.join("");
+  $("liveHint").textContent = `${st.source} · ${st.fps} frames/s · ${LIVE.paused ? "paused" : "live"}`;
+}
+pollLive(); setInterval(pollLive, 250);
+</script>
+</body>
+</html>

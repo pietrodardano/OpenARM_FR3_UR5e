@@ -16,3 +16,6 @@ weights/
 # Run reports and saved frames.
 runs/
 outputs/
+
+# Synthetic dashboard demo data.
+dashboard/demo_data/
