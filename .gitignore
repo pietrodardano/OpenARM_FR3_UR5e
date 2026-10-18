@@ -19,3 +19,4 @@ outputs/
 
 # Synthetic dashboard demo data.
 dashboard/demo_data/
+dashboard/.cache/

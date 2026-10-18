@@ -21,6 +21,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
+import subprocess
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,6 +40,8 @@ FILES = {  # whitelist: URL name -> file, resolved per request (no path traversa
 }
 FIGURE_NAMES = {"exploration.gif", "cross_embodiment_results.png", "cross_embodiment_scene.png", "logo.png"}
 MAX_RUNS = 40
+CACHE = HERE / ".cache" / "twin"
+_render_lock = __import__("threading").Lock()
 
 
 def clean(v):
@@ -63,6 +68,32 @@ def read_runs(runs: Path) -> list[dict]:
 def read_image(runs: Path, name: str) -> dict | None:
     p = runs / FILES[name]
     return {"url": f"/files/{name}", "mtime": p.stat().st_mtime, "size": p.stat().st_size} if p.exists() else None
+
+
+def twin_png(runs: Path, run_id: str) -> Path | None:
+    """MuJoCo render of a run's detections, cached by the report's mtime. Rendered in a subprocess so a
+    GL problem (no display, no EGL) can never take the dashboard down."""
+    if not re.fullmatch(r"[0-9A-Za-z_.-]+", run_id):
+        return None
+    report = runs / run_id / "report.json"
+    if not report.exists():
+        return None
+    out = CACHE / f"{run_id}-{int(report.stat().st_mtime)}.png"
+    if out.exists():
+        return out
+    with _render_lock:  # one render at a time: cheap on CPU, and never more than one GL context
+        if out.exists():
+            return out
+        try:
+            r = subprocess.run([sys.executable, str(HERE / "twin3d.py"), "--report", str(report), "--out", str(out)],
+                               capture_output=True, text=True, timeout=90)
+        except subprocess.TimeoutExpired:
+            return None
+        if r.returncode != 0:
+            (CACHE / "last_error.txt").parent.mkdir(parents=True, exist_ok=True)
+            (CACHE / "last_error.txt").write_text(r.stderr[-2000:])
+            return None
+    return out if out.exists() else None
 
 
 def workcell(config: Path) -> dict:
@@ -111,6 +142,11 @@ class Handler(BaseHTTPRequestHandler):
                      "images": {n: read_image(self.runs, n) for n in FILES},
                      "figures": sorted(n for n in FIGURE_NAMES if (FIGURES / n).exists())}
             return self._send(200, json.dumps(clean(state)).encode(), "application/json")
+        if path.startswith("/twin/") and path.endswith(".png"):
+            png = twin_png(self.runs, path[len("/twin/"):-len(".png")])
+            if png is None:
+                return self._send(404, b"twin render unavailable (see dashboard/.cache/twin/last_error.txt)", "text/plain")
+            return self._send(200, png.read_bytes(), "image/png")
         if path == "/api/live":
             if self.tap is None:
                 return self._send(200, b'{"enabled": false}', "application/json")

@@ -59,6 +59,7 @@
   .sim img { width:100%; border-radius:12px; border:1px solid var(--line); background:#fff; }
   .note { font-size:12px; color:var(--muted); margin-top:10px; }
   label.follow { display:flex; align-items:center; gap:7px; cursor:pointer; } input[type=checkbox] { accent-color:var(--teal); }
+  .dec2 { display:grid; grid-template-columns:1fr 1fr; gap:24px; } @media (max-width:1000px) { .dec2 { grid-template-columns:1fr; } }
   .livebar { display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:8px; }
   .livebar .tabs { margin:0; } button.ghost { border:1px solid var(--line); background:#161e2f; color:var(--muted); border-radius:8px; padding:4px 12px; cursor:pointer; font-size:12px; }
   button.ghost:hover { color:var(--ink); }
@@ -105,6 +106,12 @@
     <div class="note">Last saved detection image from <code>runs/detect/</code>. It is a snapshot, not live video: the dashboard never opens the camera.</div>
   </section>
 
+  <section class="card c6" id="twinCard">
+    <h2>Digital twin (MuJoCo) <span class="hint" id="twinHint"></span></h2>
+    <div class="cam" id="twin">select a run to rebuild it in the simulation</div>
+    <div class="note">The real case rebuilt in simulation: the project's own workcell model with each can or box placed where vision found it (robot base frame). Band color after weighing: orange = heavy, teal = light. Rendered on demand from the run report; it never touches the robot or the camera.</div>
+  </section>
+
   <section class="card c6">
     <h2>Workcell twin (top view) <span class="hint">robot base frame: +X forward, +Y left</span></h2>
     <svg id="map" viewBox="0 0 640 600" width="100%" role="img" aria-label="top view of the workcell"></svg>
@@ -122,13 +129,19 @@
     <div class="note">Absolute values carry model offsets (arm gravity model, cable drag). Both objects are measured the same way at the same pose, so the difference is the reliable output.</div>
   </section>
 
-  <section class="card c6">
+  <section class="card c12">
     <h2>Decision <span class="hint" id="decHint"></span></h2>
-    <svg id="gauge" viewBox="0 0 640 120" width="100%" role="img" aria-label="z-score gauge"></svg>
-    <div id="decision"></div>
-    <h2 style="margin-top:14px">Phases</h2>
-    <div class="chips" id="chips"></div>
-    <div class="log" id="log"></div>
+    <div class="dec2">
+      <div>
+        <svg id="gauge" viewBox="0 0 640 120" width="100%" role="img" aria-label="z-score gauge"></svg>
+        <div id="decision"></div>
+      </div>
+      <div>
+        <h2 style="margin-top:0">Phases</h2>
+        <div class="chips" id="chips"></div>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
   </section>
 
   <section class="card c12">
@@ -172,7 +185,7 @@ function run() { return state.runs.find((x) => x.id === selected) || null; }
 function render() {
   $("demo").style.display = state.demo ? "block" : "none";
   $("runDir").textContent = state.runs_dir;
-  renderStatus(); renderCamera(); renderMap(); renderMass(); renderDecision(); renderHistory(); renderSim();
+  renderStatus(); renderCamera(); renderTwin(); renderMap(); renderMass(); renderDecision(); renderHistory(); renderSim();
 }
 
 function renderStatus() {
@@ -199,6 +212,23 @@ function renderCamera() {
   const im = imgs[camTab], key = camTab + im.mtime;
   $("camAge").textContent = "saved " + ago(state.now - im.mtime);
   if (key !== lastImgKey) { $("cam").innerHTML = `<img src="${im.url}?t=${im.mtime}" alt="camera detection">`; lastImgKey = key; }
+}
+
+let twinKey = "";
+function renderTwin() {
+  const r = run(), box = $("twin");
+  if (!r) { $("twinHint").textContent = ""; return; }
+  const key = r.id + ":" + r.mtime;
+  $("twinHint").textContent = r.report.objects.length + " object(s) from run " + r.id;
+  if (key === twinKey) return;
+  twinKey = key;
+  if (!r.report.objects.length) { box.textContent = "this run detected no objects"; return; }
+  box.textContent = "rebuilding the scene in MuJoCo…";
+  const img = new Image();
+  img.alt = "MuJoCo rebuild of the detected scene";
+  img.onload = () => { if (twinKey === key) { box.innerHTML = ""; box.appendChild(img); } };
+  img.onerror = () => { if (twinKey === key) box.textContent = "twin render unavailable (needs MuJoCo and the OpenArm model; see dashboard/.cache/twin/last_error.txt)"; };
+  img.src = "/twin/" + encodeURIComponent(r.id) + ".png?t=" + r.mtime;
 }
 
 function renderMap() {
