@@ -26,10 +26,10 @@ with scripts/jog_joints.py in another terminal.
 
 Usage:
     # intrinsics first (scripts/calibrate_intrinsics.py); then:
-    python scripts/calibrate_camera_touch.py --side right
+    ../.venv/bin/python scripts/calibrate_camera_touch.py --side right
 
     # re-click / re-solve a saved session later, with no robot attached
-    python scripts/calibrate_camera_touch.py --load-session outputs/touch_session
+    ../.venv/bin/python scripts/calibrate_camera_touch.py --load-session outputs/touch_session
 
 Procedure:
   1. Close the gripper fully. The TCP is a point on the gripper axis, 90 mm past
@@ -61,7 +61,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from calibrate_table_tape import (  # noqa: E402
     WINDOW, draw_table_grid, draw_zoom_inset, load_config, load_intrinsics, pixel_to_table,
-    plane_homography, probe_devices, rotation_to_quat, verify_interactive, write_extrinsics,
+    open_camera, plane_homography, rotation_to_quat, verify_interactive, write_extrinsics,
 )
 
 MIN_POINTS = 6
@@ -70,38 +70,22 @@ MIN_POINTS = 6
 # ---------------------------------------------------------------------------
 # sampling
 # ---------------------------------------------------------------------------
-_ROBOT_CACHE: dict = {}
-
-
 def read_tcp_position(cfg: dict, side: str) -> np.ndarray:
-    """TCP position in the base frame, from the robot's measured joints. Reads only.
-
-    The driver and the kinematics are created once and reused for every sample (one CAN socket).
-    """
+    """TCP position in the base frame, from the robot's measured joints. Reads only."""
     from src.control.robot_interface import SIDES  # noqa: PLC0415
     from src.hardware import OpenArmBimanual  # noqa: PLC0415
     from src.planning.openarm_kinematics import OpenArmKinematics  # noqa: PLC0415
 
-    if not _ROBOT_CACHE:
-        _ROBOT_CACHE["robot"] = OpenArmBimanual.from_config(cfg)
-        _ROBOT_CACHE["kin"] = OpenArmKinematics(cfg.get("robot", {}).get("mjcf_path"))
-    robot = _ROBOT_CACHE["robot"]
-    if side not in robot.active_sides:
-        raise SystemExit(f"--side {side}: arm not active (hardware.active_sides = {list(robot.active_sides)})")
+    robot = OpenArmBimanual.from_config(cfg)
     state = robot.read_passive()
-    poses = _ROBOT_CACHE["kin"].fk({s: state.arms[s].q for s in SIDES})
+    kinematics = OpenArmKinematics(cfg.get("robot", {}).get("mjcf_path"))
+    poses = kinematics.fk({s: state.arms[s].q for s in SIDES})
     return poses[side][0].copy()
 
 
-def capture_frame(device: int, width: int, height: int, rotate_180: bool) -> np.ndarray:
-    cap = cv2.VideoCapture(device)
-    if not cap.isOpened():
-        working = probe_devices()
-        raise SystemExit(f"Could not open camera index {device}. "
-                         + (f"These opened: {working}; re-run with --device {working[0]}."
-                            if working else "Check `ls /dev/video*` and permissions."))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+def capture_frame(device, width: int, height: int, rotate_180: bool,
+                  name_hint: str | None = None, fallback_index: int | None = None) -> np.ndarray:
+    cap, _index, _w, _h = open_camera(device, width, height, name_hint, fallback_index)
     frame = None
     try:
         for _ in range(5):
@@ -131,7 +115,7 @@ def planarity_mm(points: np.ndarray) -> float:
 
 def collect_samples(args: argparse.Namespace, cfg: dict) -> tuple[np.ndarray, list[np.ndarray]]:
     vision = cfg.get("vision", {}) or {}
-    device = args.device if args.device is not None else int(vision.get("device_index", 0))
+    device = args.device
     width, height = int(vision.get("width", 1280)), int(vision.get("height", 720))
     rotate = vision.get("rotate_180", False) if args.rotate_180 is None else args.rotate_180
 
@@ -166,7 +150,8 @@ def collect_samples(args: argparse.Namespace, cfg: dict) -> tuple[np.ndarray, li
             continue
 
         tcp = read_tcp_position(cfg, args.side)
-        frame = capture_frame(device, width, height, rotate)
+        frame = capture_frame(device, width, height, rotate, vision.get("camera_device"),
+                              vision.get("device_index"))
         points.append(tcp)
         frames.append(frame)
         current = np.array(points)
@@ -326,7 +311,7 @@ def tip_offset_check(points: np.ndarray, table_z: float) -> str:
     return (f"Lowest touches sit {delta_mm:+.1f} mm from the configured tabletop "
             f"(z = {table_z:.3f} m) -- {verdict}.\n"
             f"  If you touched the table with those, that offset is the TCP-to-fingertip "
-            f"distance plus any\n  error in workcell.table.top_height_m / arm_mount_height_m. It does not affect "
+            f"distance plus any\n  error in workcell.table.top_height_m. It does not affect "
             f"the camera pose below, but it does\n  tell you how much to trust the table height.")
 
 
@@ -442,15 +427,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", default="configs/task_config.yaml")
-    parser.add_argument("--side", choices=("left", "right"), default="left",
-                        help="Arm whose TCP touches the points (must be active; the right arm is not).")
+    parser.add_argument("--side", choices=("left", "right"), default="right")
     parser.add_argument("--intrinsics", default="configs/camera_intrinsics.yaml")
     parser.add_argument("--out", default="configs/camera_extrinsics.yaml")
     parser.add_argument("--device", type=int, default=None)
     parser.add_argument("--rotate-180", dest="rotate_180", action="store_true", default=None)
     parser.add_argument("--no-rotate-180", dest="rotate_180", action="store_false", default=None)
     parser.add_argument("--table-z", type=float, default=None,
-                        help="Tabletop height in the robot base frame, m. Default: derived from workcell (0.092 m for the 0.725 m table).")
+                        help="Tabletop height, m. Default: workcell.table.top_height_m.")
     parser.add_argument("--max-residual-px", type=float, default=4.0,
                         help="Drop a touched point whose reprojection residual exceeds this, then "
                              "re-solve (default 4 px). A mis-clicked tip is the usual cause.")
@@ -465,10 +449,7 @@ def main() -> None:
 
     config = load_config(args.config)
     table_cfg = (config.get("workcell", {}) or {}).get("table", {}) or {}
-    # Tabletop in the robot BASE frame (controller / FK frame, origin at the arm root), not the
-    # floor-referenced workcell.table.top_height_m: z = top_height_m - (arm_mount_height_m - 0.697).
-    from src.task.workcell import WorkcellGeometry  # noqa: PLC0415
-    table_z = args.table_z if args.table_z is not None else WorkcellGeometry.from_config(config).table_top_z_m
+    table_z = args.table_z if args.table_z is not None else float(table_cfg.get("top_height_m", 0.75))
 
     if args.load_session:
         points, frames, meta = load_session(args.load_session)
@@ -493,7 +474,7 @@ def main() -> None:
                 f"This method needs them -- without the lens model the pose is not trustworthy on a\n"
                 f"wide-angle camera. Print configs/charuco_5x7_square28mm_marker20mm.pdf (or run\n"
                 f"scripts/charuco_for_screen.py to show the board on a tablet), take 20-30 photos, then:\n"
-                f"  python scripts/calibrate_intrinsics.py --images <dir> "
+                f"  ../.venv/bin/python scripts/calibrate_intrinsics.py --images <dir> "
                 f"--square-size 28 --marker-size 20\n"
                 f"Pass --allow-estimated-intrinsics to proceed anyway with a guessed focal length.")
         focal = 0.9 * max(image_size)  # crude stand-in; the warning in the output says so

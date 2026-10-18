@@ -1,11 +1,7 @@
 # Camera Calibration
 
 Everything is expressed in the frame the MJCF and the controllers use:
-**+x forward, +y left, +z up, origin at the arm root `openarm_body_link0`** (the official MJCF
-frame used by the controller and FK). In the measured workcell that origin is 0.633 m above the
-floor, so the 0.725 m tabletop is at **z = 0.092 m** here; both pose scripts default to that value
-([src/task/workcell.py](../src/task/workcell.py)). Passing the floor-referenced 0.725 m instead
-would misplace every touched point's plane by 63 cm.
+**+x forward, +y left, +z up, origin on the floor under the torso.**
 
 ## The short version
 
@@ -33,9 +29,9 @@ curl, self-lit. Generate one sized to your screen's exact pixel resolution, so
 any viewer that shows it fullscreen without cropping displays it 1:1:
 
 ```bash
-python scripts/charuco_for_screen.py --screen 2360x1640 --ppi 264
+../.venv/bin/python scripts/charuco_for_screen.py --screen 2360x1640 --ppi 264
 # or, if you don't know the PPI:
-python scripts/charuco_for_screen.py --screen 2360x1640 --diagonal-in 10.86
+../.venv/bin/python scripts/charuco_for_screen.py --screen 2360x1640 --diagonal-in 10.86
 ```
 
 It prints the exact square size in mm (`square_px * 25.4 / ppi`) and the grid
@@ -55,10 +51,10 @@ Then take 20–30 photos and run:
 
 ```bash
 # shoot the photos with live detection + coverage feedback
-python scripts/capture_frames.py --out outputs/intrinsics_photos --device 0 \
+../.venv/bin/python scripts/capture_frames.py --out outputs/intrinsics_photos \
     --charuco --square-size 19.242 --marker-size 13.758
 
-python scripts/calibrate_intrinsics.py --images outputs/intrinsics_photos \
+../.venv/bin/python scripts/calibrate_intrinsics.py --images outputs/intrinsics_photos \
     --square-size 19.242 --marker-size 13.758 --out configs/camera_intrinsics.yaml
 ```
 
@@ -74,7 +70,7 @@ Validated on synthetic photos of a 96 × 135 mm screen board (19.2 mm squares,
 ## 2. Pose: let the robot define the geometry (recommended)
 
 ```bash
-python scripts/calibrate_camera_touch.py --side left --session outputs/touch_session   # left = the working arm
+../.venv/bin/python scripts/calibrate_camera_touch.py --side right --session outputs/touch_session
 ```
 
 Move the gripper to 12–20 points, press Enter at each, then click the tip in each
@@ -107,7 +103,7 @@ tablet-derived intrinsics above.
 ## 3. Pose without moving the robot: tape rectangle
 
 ```bash
-python scripts/calibrate_table_tape.py --side 500 --depth 400 \
+../.venv/bin/python scripts/calibrate_table_tape.py --side 500 --depth 400 \
     --near-edge-from-table-rear 150
 ```
 
@@ -168,19 +164,45 @@ while neither the camera nor the table moves. Re-run after either is touched,
 and feed the camera through the same 180° rotation the calibration recorded
 (`rotate_180_applied`).
 
+## Picking the right camera
+
+Don't pass `--device`; the scripts find the HBV by the `vision.camera_device`
+name in the config and print which index they landed on. Two reasons it is worth
+not guessing here:
+
+- **Indices mean different things to different backends.** On this machine V4L2
+  index 0 is the laptop's own ASUS webcam and index 2 is the HBV, while indices
+  1 and 3 are metadata-only nodes. When a V4L2 node cannot stream, OpenCV
+  silently falls back to its FFMPEG backend — which numbers *only* capture
+  devices, so the same integer selects a different camera. The scripts pin
+  `CAP_V4L2` so index N always means `/dev/videoN`.
+- **This module only offers 1280x720 in MJPG.** Ask for that size without
+  requesting MJPG first and it quietly hands back 640x480 YUYV. Calibrating in
+  one mode and running in another invalidates the intrinsics — the field of view
+  is not even the same between its 4:3 and 16:9 modes. The scripts request MJPG,
+  then verify and report the mode they actually got.
+
+To see what is attached:
+
+```bash
+../.venv/bin/python -c "import sys; sys.path.insert(0,'scripts'); \
+    from calibrate_table_tape import describe_cameras; print(describe_cameras())"
+```
+
 ## Note on the environment
 
-- **Calibration** needs OpenCV with the contrib modules (`cv2.aruco.CharucoDetector`): the `calib`
-  extra (`uv sync --extra calib`) or the robot container, which installs it.
-- **Object detection** (GroundingDINO + SAM2) needs torch plus `requirements-vision.txt` and the
-  weights (`scripts/download_vision_weights.sh`). In the container, build with
-  `ROBOTOKENS_VISION=1 docker/dev.sh build`. They are not in `pyproject.toml`, because building them
-  needs torch, which would break `uv lock`. Do not run `uv sync` inside a vision container: it
-  would remove them. Run scripts with `python`.
-- Use the camera index in `vision.device_index` for both calibration and detection (2 for the HBV
-  camera on the Linux robot PC; `v4l2-ctl --list-devices` to check), and keep `vision.width/height`
-  unchanged afterwards. The detector refuses frames whose size differs from the calibration.
+Run everything with the existing venv one level above the repo:
 
-The two OpenCV versions differ in the planar pose solvers: OpenCV 5's `SOLVEPNP_IPPE` returns
-success-with-NaN for a target that is not in the object frame's z = 0 plane, which
-`calibrate_table_tape.py` handles explicitly.
+```bash
+../.venv/bin/python scripts/<script>.py ...
+```
+
+`uv run` currently fails in this checkout (it tries to build `torch` and the
+build errors out), and the **system** Python has OpenCV 4.6, which lacks
+`cv2.aruco.CharucoDetector` — `calibrate_intrinsics.py` and the live detection in
+`capture_frames.py` cannot run there. The venv above has OpenCV 5.0 and MuJoCo
+3.16, and imports the project's `src/` modules fine.
+
+The two OpenCV versions also differ in the planar pose solvers: OpenCV 5's
+`SOLVEPNP_IPPE` returns success-with-NaN for a target that is not in the object
+frame's z = 0 plane, which `calibrate_table_tape.py` handles explicitly.

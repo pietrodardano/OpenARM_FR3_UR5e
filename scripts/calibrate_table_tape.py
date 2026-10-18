@@ -10,7 +10,7 @@ Writes configs/camera_extrinsics.yaml:
   * pixel -> tabletop (x, y) homography, so a pixel on the table turns straight
     into a base-frame grasp target -- this is the trustworthy output,
   * camera position + rotation in the robot base frame (+x forward, +y left,
-    +z up, origin at the arm root openarm_body_link0 -- the official MJCF / controller frame),
+    +z up, origin on the floor under the torso -- the MJCF world frame),
   * the MuJoCo camera pos/quat/fovy to paste into the scene.
 
 Intrinsics decide how much of that you can trust:
@@ -30,18 +30,18 @@ than a small square in the middle.
 
 Usage:
     # live camera: 500 x 400 mm rectangle, near edge 150 mm forward of the table's rear edge
-    python scripts/calibrate_table_tape.py --side 500 --depth 400 \
+    ../.venv/bin/python scripts/calibrate_table_tape.py --side 500 --depth 400 \
         --near-edge-from-table-rear 150
 
     # from a photo, rectangle not centred on the midline
-    python scripts/calibrate_table_tape.py --image snapshot.jpg \
+    ../.venv/bin/python scripts/calibrate_table_tape.py --image snapshot.jpg \
         --side 500 --depth 400 --near-edge-x 0.300 --center-y 0.050
 
     # click along the tape edges instead of the corners (5+ clicks per edge)
-    python scripts/calibrate_table_tape.py --mode edges --side 500
+    ../.venv/bin/python scripts/calibrate_table_tape.py --mode edges --side 500
 
     # headless: pass the four corner pixels yourself
-    python scripts/calibrate_table_tape.py --image snapshot.jpg --side 500 \
+    ../.venv/bin/python scripts/calibrate_table_tape.py --image snapshot.jpg --side 500 \
         --points "412,585;889,591;812,402;489,399"
 """
 
@@ -162,17 +162,149 @@ def estimate_focal(obj_points: np.ndarray, img_points: np.ndarray,
 # ---------------------------------------------------------------------------
 # capture
 # ---------------------------------------------------------------------------
-def probe_devices(limit: int = 6) -> list[int]:
-    """Camera indices that actually open and deliver a frame."""
-    found = []
-    for index in range(limit):
-        cap = cv2.VideoCapture(index)
+def camera_names() -> dict[int, str]:
+    """Linux: /dev/videoN -> the driver's name for it, so cameras can be found by name."""
+    names: dict[int, str] = {}
+    base = "/sys/class/video4linux"
+    if not os.path.isdir(base):
+        return names
+    for entry in sorted(os.listdir(base)):
+        if not entry.startswith("video"):
+            continue
         try:
-            if cap.isOpened() and cap.read()[0]:
-                found.append(index)
-        finally:
-            cap.release()
-    return found
+            index = int(entry[len("video"):])
+            with open(os.path.join(base, entry, "name")) as handle:
+                names[index] = handle.read().strip()
+        except (ValueError, OSError):
+            continue
+    return names
+
+
+def video_capture(index: int) -> cv2.VideoCapture:
+    """
+    Opens a camera index, pinned to V4L2 on Linux.
+
+    Without pinning, OpenCV falls back to the FFMPEG backend when a V4L2 node
+    cannot stream -- and FFMPEG numbers only the capture devices, so the same
+    integer means a different camera in each backend. That is how "index 1"
+    silently becomes someone else's webcam. With CAP_V4L2, index N is
+    /dev/videoN and nothing else.
+    """
+    if os.path.isdir("/sys/class/video4linux"):
+        return cv2.VideoCapture(index, cv2.CAP_V4L2)
+    return cv2.VideoCapture(index)
+
+
+def captures(index: int) -> bool:
+    """True if this index opens and hands back a real frame."""
+    cap = video_capture(index)
+    try:
+        if not cap.isOpened():
+            return False
+        for _ in range(3):
+            ok, frame = cap.read()
+            if ok and frame is not None and frame.size:
+                return True
+        return False
+    except cv2.error:
+        return False
+    finally:
+        cap.release()
+
+
+def probe_devices(limit: int = 8) -> list[int]:
+    """
+    Camera indices that actually open and deliver a frame.
+
+    Only indices the kernel actually exposes are tried; probing past them makes
+    OpenCV print a wall of backend errors for devices that were never there.
+    """
+    known = sorted(camera_names())
+    return [index for index in (known or range(limit)) if captures(index)]
+
+
+def describe_cameras() -> str:
+    names = camera_names()
+    if not names:
+        return "no /dev/video* devices found"
+    working = set(probe_devices())
+    return "\n".join(
+        f"    --device {index:<2} {names[index]!r}"
+        + ("" if index in working else "   (does not capture -- usually a metadata node)")
+        for index in sorted(names))
+
+
+def find_camera_index(name_hint: str | None) -> int | None:
+    """
+    Lowest capturing /dev/videoN whose driver name matches the hint.
+
+    Index is not a stable way to name a camera: a laptop's built-in webcam
+    usually takes 0, UVC devices expose a second metadata-only node next to the
+    real one, and the order changes when things are replugged. The name is
+    stable, so vision.camera_device is what we match on.
+    """
+    if not name_hint:
+        return None
+    hint = name_hint.strip().lower()
+    for index, name in sorted(camera_names().items()):
+        if hint not in name.lower():
+            continue
+        if captures(index):
+            return index
+    return None
+
+
+def open_camera(device: int | None, width: int, height: int, name_hint: str | None = None,
+                fallback_index: int | None = None) -> tuple[cv2.VideoCapture, int, int, int]:
+    """
+    Opens the camera and puts it in the requested mode.
+
+    MJPG is requested first on purpose: this HBV module (and most cheap UVC
+    cameras) only offers the higher resolutions in MJPG, and silently serves
+    640x480 YUYV instead if you just ask for the size. Calibrating in one mode
+    and running in another invalidates the intrinsics -- the field of view is
+    not even the same between its 4:3 and 16:9 modes -- so the actual mode is
+    verified and reported, never assumed.
+    """
+    if device is None:
+        # Name first, index only as a fallback: a configured index goes stale the
+        # moment the machine, the OS or the USB order changes, and silently opening
+        # the wrong camera is worse than failing.
+        device = find_camera_index(name_hint)
+        if device is not None:
+            print(f"  found {name_hint!r} at index {device}")
+        elif fallback_index is not None:
+            device = int(fallback_index)
+            print(f"  {name_hint!r} not found by name; falling back to configured index {device}")
+        else:
+            raise SystemExit(f"Could not find a camera matching {name_hint!r}. Available:\n"
+                             f"{describe_cameras()}")
+
+    cap = video_capture(device)
+    if not cap.isOpened():
+        raise SystemExit(f"Could not open camera index {device}. Available:\n{describe_cameras()}")
+
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    frame = None
+    for _ in range(6):
+        ok, grabbed = cap.read()
+        if ok:
+            frame = grabbed
+    if frame is None:
+        cap.release()
+        raise SystemExit(f"Camera index {device} opened but delivered no frames. Available:\n"
+                         f"{describe_cameras()}")
+
+    actual_w, actual_h = frame.shape[1], frame.shape[0]
+    if (actual_w, actual_h) != (width, height):
+        print(f"  WARNING: asked for {width}x{height}, got {actual_w}x{actual_h}. The camera does "
+              f"not offer that mode.\n           Calibrate in the SAME mode the pipeline will run "
+              f"in, or the intrinsics will not apply.")
+    else:
+        print(f"  {actual_w}x{actual_h} MJPG")
+    return cap, device, actual_w, actual_h
 
 
 def grab_frame(args: argparse.Namespace, vision_cfg: dict) -> np.ndarray:
@@ -183,31 +315,21 @@ def grab_frame(args: argparse.Namespace, vision_cfg: dict) -> np.ndarray:
             raise SystemExit(f"Could not read --image {args.image}")
         return frame
 
-    index = args.device if args.device is not None else int(vision_cfg.get("device_index", 0))
     width = int(vision_cfg.get("width", 1280))
     height = int(vision_cfg.get("height", 720))
-    cap = cv2.VideoCapture(index)
-    if not cap.isOpened():
-        # vision.device_index in the config is macOS-oriented; on Linux the same camera
-        # usually sits at a different /dev/video* index (and some of those nodes are
-        # metadata-only, so they cannot be opened at all).
-        working = probe_devices()
-        hint = (f"Indices that opened here: {working}. Re-run with --device {working[0]}."
-                if working else "No camera index opened -- check `ls /dev/video*` and permissions.")
-        raise SystemExit(f"Could not open camera index {index}. {hint}\n"
-                         f"You can also calibrate from a photo: --image path.jpg")
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+    cap, _index, _w, _h = open_camera(args.device, width, height,
+                                      vision_cfg.get("camera_device"),
+                                      vision_cfg.get("device_index"))
     frame = None
     try:
         for _ in range(10):  # let auto-exposure settle
-            ok, frame = cap.read()
-            if not ok:
-                frame = None
+            ok, grabbed = cap.read()
+            if ok:
+                frame = grabbed
     finally:
         cap.release()
     if frame is None:
-        raise SystemExit(f"Camera index {index} opened but returned no frames.")
+        raise SystemExit("Camera stopped delivering frames.")
 
     rotate = vision_cfg.get("rotate_180", False) if args.rotate_180 is None else args.rotate_180
     if rotate:
@@ -566,7 +688,7 @@ def write_extrinsics(path: str, payload: dict) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     header = (
         "# Camera extrinsics in the robot base frame (+x forward, +y left, +z up,\n"
-        "# origin at the arm root openarm_body_link0 -- the official MJCF / controller frame).\n"
+        "# origin on the floor under the torso -- the MJCF world frame).\n"
         "# Generated by scripts/calibrate_table_tape.py. Do not hand-edit; re-run the script.\n"
     )
     with open(path, "w") as handle:
@@ -640,7 +762,7 @@ def warn_on_quality(payload: dict, estimated_focal: bool) -> None:
         print("\nTo fix that, measure the intrinsics once -- it takes about ten minutes. Print")
         print("configs/charuco_5x7_square28mm_marker20mm.pdf, take 20-30 photos of it at varied")
         print("angles, distances and frame positions, then:")
-        print("  python scripts/calibrate_intrinsics.py --images <dir> --square-size 28 "
+        print("  ../.venv/bin/python scripts/calibrate_intrinsics.py --images <dir> --square-size 28 "
               "--marker-size 20")
         print("and re-run this script -- it picks the measured intrinsics up automatically, and the")
         print("camera pose, the FOV and the tabletop mapping all become trustworthy.")
@@ -702,7 +824,7 @@ def main() -> None:
     parser.add_argument("--center-y", type=float, default=0.0,
                         help="Base-frame y of the square's centre, m (+ = robot's left). Default 0 (midline).")
     parser.add_argument("--table-z", type=float, default=None,
-                        help="Tabletop height in the robot base frame, m. Default: derived from workcell (0.092 m for the 0.725 m table).")
+                        help="Tabletop height, m. Default: workcell.table.top_height_m.")
     parser.add_argument("--image", default=None, help="Calibrate from this photo instead of the live camera.")
     parser.add_argument("--device", type=int, default=None, help="Camera index (default: vision.device_index).")
     parser.add_argument("--rotate-180", dest="rotate_180", action="store_true", default=None)
@@ -723,10 +845,7 @@ def main() -> None:
     config = load_config(args.config)
     vision_cfg = config.get("vision", {}) or {}
     table_cfg = (config.get("workcell", {}) or {}).get("table", {}) or {}
-    # Tabletop in the robot BASE frame (controller / FK frame, origin at the arm root), not the
-    # floor-referenced workcell.table.top_height_m: z = top_height_m - (arm_mount_height_m - 0.697).
-    from src.task.workcell import WorkcellGeometry  # noqa: PLC0415
-    table_z = args.table_z if args.table_z is not None else WorkcellGeometry.from_config(config).table_top_z_m
+    table_z = args.table_z if args.table_z is not None else float(table_cfg.get("top_height_m", 0.75))
     table_rear_x = float(table_cfg.get("center_x_m", 0.65)) - float(table_cfg.get("length_m", 1.2)) / 2.0
     side = args.side / 1000.0
     depth = (args.depth if args.depth is not None else args.side) / 1000.0

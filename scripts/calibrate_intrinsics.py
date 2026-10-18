@@ -43,6 +43,8 @@ def main() -> None:
     parser.add_argument("--marker-size", type=float, required=True, help="Measured marker size in mm.")
     parser.add_argument("--squares-x", type=int, default=5)
     parser.add_argument("--squares-y", type=int, default=7)
+    parser.add_argument("--dictionary", default="6X6_250",
+                        help="ArUco dictionary of the board, e.g. 6X6_250 (default) or 4X4_50.")
     parser.add_argument("--out", default="configs/camera_intrinsics.yaml")
     args = parser.parse_args()
 
@@ -53,7 +55,10 @@ def main() -> None:
         sys.exit(1)
     print(f"Found {len(image_paths)} images.")
 
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_6X6_250)
+    attribute = f"DICT_{args.dictionary.upper().replace('DICT_', '')}"
+    if not hasattr(cv2.aruco, attribute):
+        sys.exit(f"Unknown --dictionary {args.dictionary!r}")
+    aruco_dict = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, attribute))
     board = cv2.aruco.CharucoBoard(
         (args.squares_x, args.squares_y),
         args.square_size / 1000.0,
