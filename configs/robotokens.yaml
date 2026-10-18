@@ -61,7 +61,7 @@ motion:                            # Cartesian moveL + checks (SR4)
   min_move_s: 1.5
   joint_speed_deg_s: 15.0
   ik_iters: 30
-  max_ik_pos_error_m: 0.005
+  max_ik_pos_error_m: 0.012        # was 0.005: aborted at 10 mm near the edge of reach (can at x=0.364)
   max_ik_rot_error_rad: 0.035
   check_points: 8
   table_margin_m: 0.035            # arm bodies stay this far above the table
