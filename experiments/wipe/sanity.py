@@ -51,8 +51,8 @@ def rollout(model, n: int = 64, T: int = 96, seed: int = 0) -> np.ndarray:
 class Scrub:
     """Hand-coded: walk to the dirt + perpendicular sine at the human stroke freq/amplitude."""
 
-    def __init__(self, hz: float, amp: float) -> None:
-        self.hz, self.amp, self.k = hz, amp, 0
+    def __init__(self, hz: float, amp: float, fwd: float = 0.35) -> None:
+        self.hz, self.amp, self.fwd, self.k = hz, amp, fwd, 0
 
     def __call__(self, sim, xy, rng):
         g = run.goal_to_dirt(sim, xy)
@@ -61,7 +61,7 @@ class Scrub:
         self.k += 1
         w = 2 * np.pi * self.hz / RATE_HZ
         wiggle = np.array([-u[1], u[0]]) * self.amp * w * np.cos(w * self.k)  # derivative of amp*sin
-        return xy + 0.35 * u * run.STEP + wiggle
+        return xy + self.fwd * u * run.STEP + wiggle
 
     def observe(self, d) -> None:
         pass

@@ -20,7 +20,7 @@ import numpy as np
 import torch
 
 import run
-from physim import BOARD_X, BOARD_Y, F_DES, TCP_ABOVE_BOTTOM, PhysWipe, dirt_pattern
+from physim import F_DES, PhysWipe, dirt_pattern
 from sanity import Scrub
 
 RATE_HZ = 12.0
@@ -29,10 +29,12 @@ SQUEEZE_M = 0.002  # finger set-point this far inside the contact opening (~11 N
 
 
 class Zigzag:
-    def __init__(self) -> None:
-        pts, ys = [], np.arange(BOARD_Y[0] + 0.015, BOARD_Y[1], 0.03)
+    """Hard-coded: boustrophedon rows over the whole dirt area (pad lanes 3 cm apart, pad 4 cm wide)."""
+
+    def __init__(self, sim) -> None:
+        pts, ys = [], np.arange(sim.dirt_y[0] + 0.015, sim.dirt_y[1], 0.03)
         for i, y in enumerate(ys):
-            xs = (BOARD_X[0] + 0.01, BOARD_X[1] - 0.01)
+            xs = (sim.dirt_x[0] + 0.01, sim.dirt_x[1] - 0.01)
             xs = xs if i % 2 == 0 else xs[::-1]
             pts += [(xs[0], y), (xs[1], y)]
         self.pts, self.i = np.array(pts), 0
@@ -49,14 +51,17 @@ class Zigzag:
         pass
 
 
-CONTROLLERS = {"diffusion": lambda: run.Learned("diffusion"), "scrub": lambda: Scrub(0.5, 0.04),
-               "zigzag": Zigzag, "greedy": run.Greedy, "bc": lambda: run.Learned("bc")}
+CONTROLLERS = {"zigzag": Zigzag, "diffusion": lambda sim: run.Learned("diffusion"),
+               "scrub": lambda sim: Scrub(1.0, 0.05, 0.35),  # best of 18 settings tuned on physics seeds 0-4
+               "greedy": lambda sim: run.Greedy(),
+               "bc": lambda sim: run.Learned("bc"), "random": lambda sim: run.RandomWalk()}
 
 
-def episode(sim: PhysWipe, name: str, seed: int, frames: list | None = None, fps: float = 30.0) -> dict:
+def episode(sim: PhysWipe, name: str, seed: int, frames: list | None = None, fps: float = 30.0,
+            stubborn: bool = False) -> dict:
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
-    sim.reset(dirt_pattern(sim, seed))
+    sim.reset(dirt_pattern(sim, seed, stubborn))
     log = {"phase": [], "force": [], "slip_mm": [], "tilt_deg": []}
     next_frame = [0.0]
 
@@ -74,11 +79,11 @@ def episode(sim: PhysWipe, name: str, seed: int, frames: list | None = None, fps
             sim.set_target(p0 + (np.asarray(p) - p0) * a * a * (3 - 2 * a))
             tick(int(T * 1000 / n))
 
-    phase = ["grasp"]
+    phase = ["grasp (hard-coded)"]
     sp, _ = sim.sponge_pose()
-    grasp = np.array([sp[0], sp[1], sim.z_board + TCP_ABOVE_BOTTOM])
-    move(grasp + [0, 0, 0.04], 1.0)
-    move(grasp, 1.2)
+    grasp = sim.tcp_for_pad(sp[:2])
+    move(grasp + sim.u * 0.06, 1.0)  # pre-grasp back along the handle axis
+    move(grasp, 1.2)  # slide the open jaws onto the handle
     sim.gripper(False, 0.0)
     tick(300)
     q_contact = float(sim.data.qpos[sim.arm.finger_qadr[0]])
@@ -89,9 +94,10 @@ def episode(sim: PhysWipe, name: str, seed: int, frames: list | None = None, fps
     rel0 = R_tcp.T @ (sp - p_tcp)  # sponge in the hand frame right after the grasp
 
     phase[0] = "transfer"
-    start = np.array([np.mean(BOARD_X), np.mean(BOARD_Y), grasp[2] + 0.05])
-    move(grasp + [0, 0, 0.05], 0.8)
-    move(start, 1.5)
+    move(grasp + [0, 0, 0.06], 0.8)
+    lifted = sim.sponge_pose()[0][2] - sp[2]  # did the sponge come up with the hand?
+    centre = np.array([np.mean(sim.dirt_x), np.mean(sim.dirt_y)])
+    move(sim.tcp_for_pad(centre, 0.04), 1.5)
     phase[0] = "touch down"
     felt = 0
     while felt < 4 and sim.t < 30:  # descend at 3 cm/s until the pad feels the board for 40 ms
@@ -102,21 +108,23 @@ def episode(sim: PhysWipe, name: str, seed: int, frames: list | None = None, fps
     tick(500)
 
     phase[0] = f"wipe: {name}"
-    ctrl = CONTROLLERS[name]()
+    ctrl = CONTROLLERS[name](sim)
     cap = run.MAX_STEP_FACTOR * run.STEP
-    # Actions are integrated on the commanded set-point (not the measured TCP, which lags under
+    lo, hi = [sim.dirt_x[0], sim.dirt_y[0]], [sim.dirt_x[1], sim.dirt_y[1]]
+    # Controllers act on the commanded pad position (not the measured one, which lags under
     # friction): the impedance + force loop below turn the command into motion.
-    xy = sim.p_des[:2].copy()
+    xy = sim.p_des[:2] + sim.pad_offset_xy
     t_wipe0, path0 = sim.t, sim.wiped_path
     curve = []
     for k in range(int(WIPE_S * RATE_HZ)):
         d = ctrl(sim, xy, rng) - xy
         n = np.linalg.norm(d)
-        tgt = np.clip(xy + (d if n <= cap else d / n * cap), [BOARD_X[0], BOARD_Y[0]], [BOARD_X[1], BOARD_Y[1]])
+        tgt = np.clip(xy + (d if n <= cap else d / n * cap), lo, hi)
         p0 = sim.p_des.copy()
-        sim.set_target(np.array([tgt[0], tgt[1], p0[2]]))
+        t_tcp = tgt - sim.pad_offset_xy
+        sim.set_target(np.array([t_tcp[0], t_tcp[1], p0[2]]))
         for j in range(1, 9):  # 83 ms between policy steps, set-point ramped
-            sim.p_des[:2] = p0[:2] + (tgt - p0[:2]) * j / 8
+            sim.p_des[:2] = p0[:2] + (t_tcp - p0[:2]) * j / 8
             tick(10)
         p_tcp, R_tcp = sim.tcp()
         sp, Rs = sim.sponge_pose()
@@ -137,7 +145,8 @@ def episode(sim: PhysWipe, name: str, seed: int, frames: list | None = None, fps
             "force_mean": float(f.mean()), "force_std": float(f.std()), "force_min": float(f.min()),
             "frac_in_contact": float((f > 1.0).mean()), "slip_mm_max": float(max(log["slip_mm"])),
             "tilt_deg_max": float(max(log["tilt_deg"])), "sponge_path_m": float(sim.wiped_path - path0),
-            "squeeze_q": q_contact, "tau_peak": sim.tau_peak.round(1).tolist(), "curve": curve}
+            "squeeze_q": q_contact, "lifted_m": float(lifted), "torque_sat_frac": sim.sat_steps / max(1, sim.steps),
+            "tau_peak": sim.tau_peak.round(1).tolist(), "curve": curve}
 
 
 def overlay(img, t, cleaned, force, phase) -> np.ndarray:
