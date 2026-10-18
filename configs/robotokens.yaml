@@ -103,7 +103,7 @@ vision:                            # GroundingDINO + SAM2 (weights/)
   tilt_deg: 24.0                   # camera tilt off nadir (= 90 - 66 deg from calib touch 2026-10-18)
 
 task:
-  prompt: "Sort the two cans: put the lighter one in the left bin."
+  prompt: "Give me the heavy can."   # default task = handover (release on felt contact); the other object goes to its bin. Sorting: --prompt "Sort the two cans: put the lighter one in the left bin."
   object_prompt: "aluminum can . box"   # instruction names neither; tested on the real cans (0.44-0.54)
   min_confidence: 0.35
   manual_objects:                  # --objects manual (and the fake run)
