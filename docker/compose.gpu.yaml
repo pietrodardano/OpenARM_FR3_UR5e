@@ -1,9 +1,0 @@
-# GPU add-on for compose.yaml (NVIDIA container runtime). docker/dev.sh includes
-# it automatically when `docker info` lists the nvidia runtime; set
-# ROBOTOKENS_GPU=0 to force CPU-only.
-services:
-  dev:
-    runtime: nvidia
-    environment:
-      NVIDIA_VISIBLE_DEVICES: all
-      NVIDIA_DRIVER_CAPABILITIES: all
