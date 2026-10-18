@@ -7,6 +7,7 @@ as supplied by OpenArm.
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
@@ -26,7 +27,12 @@ TORSO_HEIGHT_M = 1.420
 TORSO_PROFILE_WIDTH_M = 0.060
 CAMERA_HEIGHT_ABOVE_TORSO_M = 0.180
 CAMERA_FORWARD_OFFSET_M = 0.070
-CAMERA_DOWNWARD_PITCH_DEG = 20.0
+# Near-vertical: 20 deg off straight-down (nadir), tilted towards the robot -- NOT 20 deg off
+# horizontal. At 20 deg off horizontal the image-centre ray hits the table ~2.4 m out, past the
+# pick area at x=0.20-0.32 m; 70 deg off horizontal (this value) is what reaches it. Eyeballed on
+# the real mount, not instrument-measured. See configs/task_config.yaml workcell.rgb_camera.
+CAMERA_DOWNWARD_PITCH_DEG = 70.0
+CAMERA_FOVY_DEG = 53.6  # measured from configs/camera_intrinsics.yaml (fy), not a guess
 TABLE_TOP_HEIGHT_M = 0.725  # measured
 TABLE_TOP_THICKNESS_M = 0.040
 # Provisional footprint: replace with measured dimensions when available.
@@ -158,16 +164,17 @@ def _add_static_workcell(worldbody: ET.Element) -> None:
         rgba="0.1 0.8 0.2 1",
         group="4",
     )
-    # MuJoCo cameras look along local -Z. local +X is robot right (-world Y),
-    # local +Y completes a right-handed frame, and local -Z points forward and
-    # 20 degrees downward. The FOV is provisional until camera calibration.
+    # MuJoCo cameras look along local -Z. local +X is robot right (-world Y), local +Y completes
+    # a right-handed frame, and local -Z points forward and CAMERA_DOWNWARD_PITCH_DEG downward
+    # from horizontal. local Y = (sin(pitch), 0, cos(pitch)).
+    pitch = math.radians(CAMERA_DOWNWARD_PITCH_DEG)
     ET.SubElement(
         worldbody,
         "camera",
         name="physical_hbv_rgb_camera",
         pos=f"{CAMERA_FORWARD_OFFSET_M:.6f} 0 {camera_z:.6f}",
-        xyaxes="0 -1 0 0.3420201433 0 0.9396926208",
-        fovy="70",
+        xyaxes=f"0 -1 0 {math.sin(pitch):.10f} 0 {math.cos(pitch):.10f}",
+        fovy=f"{CAMERA_FOVY_DEG:.6f}",
     )
 
 

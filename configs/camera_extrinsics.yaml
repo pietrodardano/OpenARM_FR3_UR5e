@@ -1,0 +1,74 @@
+generated: '2026-10-18T01:19:46'
+calibration_method: nominal_cad
+frame: robot_base (+x forward, +y left, +z up)
+image_width: 1280
+image_height: 720
+rotate_180_applied: true
+intrinsics:
+  source: measured (camera_intrinsics.yaml)
+  estimated: false
+  fx: 709.0302762603377
+  fy: 712.9901561688981
+  cx: 640.905147677925
+  cy: 350.9353960749678
+  fovy_deg: 53.57986364369727
+  dist_coeffs:
+  - -0.47275273958828107
+  - 0.357507795305471
+  - 0.0017924737209545284
+  - -0.0004710330430551604
+  - -0.1869814210995749
+camera_in_base_frame:
+  position_m:
+  - 0.07
+  - 0.0
+  - 0.9669999999999997
+  rotation_opencv:
+  - - 0.0
+    - -0.9396926207859083
+    - 0.3420201433256688
+  - - -1.0
+    - -0.0
+    - 0.0
+  - - 0.0
+    - -0.3420201433256688
+    - -0.9396926207859083
+  optical_axis_in_base:
+  - 0.3420201433256688
+  - 0.0
+  - -0.9396926207859083
+  downward_pitch_deg: 70.0
+  yaw_deg: 0.0
+mujoco_camera:
+  pos:
+  - 0.07
+  - 0.0
+  - 0.9669999999999997
+  quat_wxyz:
+  - 0.696364240320019
+  - 0.12278780396897288
+  - -0.12278780396897288
+  - -0.6963642403200189
+  fovy_deg: 53.57986364369727
+table_plane:
+  z_m: 0.09199999999999986
+  homography_plane_from_pixel:
+  - - 1.9185019592185663e-19
+    - -0.0012795842992027729
+    - 0.8662469758405767
+  - - -0.0014103770085451555
+    - 2.3487495424331743e-19
+    - 0.9039178849431828
+  - - 6.491484226171119e-20
+    - 0.0005482265924975393
+    - 0.8815423073783707
+  note: Undistort the pixel with the intrinsics above before applying the homography.
+warnings:
+- 'Pose (camera_in_base_frame / mujoco_camera / table_plane) is NOT measured: it comes
+  from the CAD mount dimensions in task_config.yaml''s workcell.rgb_camera, not from
+  touching the robot or taping the table. Expect several cm of position error and
+  a few degrees of pitch error. Check scripts/detect_objects.py against a ruler before
+  trusting this for an unattended grasp; replace with scripts/calibrate_camera_touch.py
+  (recommended) when precision matters.'
+- Valid only for the tabletop plane at table_plane.z_m, and only while neither the
+  camera nor the table moves, or the mount geometry in task_config.yaml changes.

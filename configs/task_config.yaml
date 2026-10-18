@@ -186,8 +186,11 @@ workcell:
     model: "HBV HD CAMERA"
     offset_forward_from_torso_m: 0.070
     height_above_torso_m: 0.180
-    downward_pitch_deg: 20.0
-    fovy_deg: 70.0 # provisional; replace after intrinsic calibration
+    # Near-vertical: 20 deg off straight-down (nadir), tilted towards the robot -- NOT 20 deg off
+    # horizontal (that put the image-centre ray 2.4 m out, past the pick area at x=0.20-0.32 m).
+    # Eyeballed on the real mount, not instrument-measured: still only good to a few degrees.
+    downward_pitch_deg: 70.0
+    fovy_deg: 53.6 # measured from configs/camera_intrinsics.yaml (fy), not the old 70 deg guess
 
 cross_embodiment:
   mode: "visual_only"

@@ -17,7 +17,7 @@ at $z=0$.
 | Square aluminum torso profile | $0.060\,\mathrm{m} \times 0.060\,\mathrm{m}$, from ground to $z=1.420\,\mathrm{m}$ |
 | Tabletop surface | $z=0.725\,\mathrm{m}$ |
 | Camera mount origin | $(0.070, 0, 1.600)\,\mathrm{m}$ |
-| Camera optical axis | Forward, pitched $20^\circ$ downward from horizontal |
+| Camera optical axis | Forward, pitched $70^\circ$ downward from horizontal (near-vertical, eyeballed on the mount, not instrument-measured) |
 
 The official model places `arm_origin` $0.697\,\mathrm{m}$ above
 `openarm_body_link0`. The generated scene therefore positions that root at
