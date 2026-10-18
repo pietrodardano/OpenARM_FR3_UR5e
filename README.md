@@ -34,7 +34,7 @@
 | Claim | Support | Level |
 |---|---|---|
 | Vision, weighing, comparison, sorting and handover run end to end | OpenArm v1 hardware, first system tests, offline test suite | hardware, no benchmarks yet |
-| The estimator is not specific to one arm | MuJoCo, OpenArm / UR5e / Franka FR3: 250 g gap recovered, heavier can identified in 200 / 200 trials per arm ([Evidence](#evidence)) | simulation |
+| The estimator transfers across arms, with sensing-dependent resolution | MuJoCo with an assumed error budget: full vs. empty (250 g) resolved on all three arms in 300 / 300 trials; about 20–30 g resolution on OpenArm and FR3, about 100 g on UR5e ([Evidence](#evidence)) | simulation |
 | The robot abstains instead of guessing when `z < 3` | implemented and unit-tested ([docs/requirements.md](docs/requirements.md), FR4) | software |
 
 **Not yet shown.** Accuracy and repeatability on hardware across object types, more than two objects, and other arms on real hardware. See [Status and roadmap](#status-and-roadmap).
@@ -97,25 +97,30 @@ Safety was ported unchanged from the hardware-validated code (SR1 to SR6 in [doc
 
 ## Evidence
 
-**Does the principle depend on the OpenArm?** We checked in simulation, without changing any robot code. [docs/cross_embodiment/simulate.py](docs/cross_embodiment/simulate.py) loads three real arm models (OpenArm v1, UR5e, Franka FR3, from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)). Each holds two look-alike cans, 100 g and 350 g, and weighs them with the recipe from [src/robotokens/sensing/payload.py](src/robotokens/sensing/payload.py). The simulated torques include friction, noise and a 3 % error in the arm model, so the estimator is not graded against itself.
+**How well does torque weighing work, and on which arms?** We tested it in simulation, without changing any robot code. [docs/cross_embodiment/simulate.py](docs/cross_embodiment/simulate.py) loads three real arm models (OpenArm v1, UR5e, Franka FR3, from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)) and runs the recipe of [src/robotokens/sensing/payload.py](src/robotokens/sensing/payload.py) on two look-alike cans.
+
+The simulated torques carry an **error budget that does not simply average away**: offset drift and hysteresis per weighing, asymmetric friction, torque ripple with pose repeatability, sensor noise, an unknown grasp position on the can (±8–10 mm) and a 3 % error in the arm's gravity model. Each arm gets values typical of its sensing principle: motor current for the OpenArm, motor current through harmonic drives for the UR5e, link-side torque sensors for the FR3. **These values are assumptions, not measurements**; they are listed in [docs/cross_embodiment/results.md](docs/cross_embodiment/results.md).
 
 <p align="center">
   <img src="docs/figures/cross_embodiment_scene.png" width="100%" alt="Still from the simulation: OpenArm, UR5e and Franka FR3 each holding a red can at the weigh pose">
 </p>
 
 <p align="center">
-  <img src="docs/figures/cross_embodiment_results.png" width="85%" alt="Estimated masses and mass difference on three arms">
+  <img src="docs/figures/cross_embodiment_results.png" width="100%" alt="Decision accuracy versus mass difference, today and with a repeatability floor, and absolute mass error per arm">
 </p>
 
-| Arm | Est. mass, 100 g can | Est. mass, 350 g can | Difference (true 250 g) | Heavier can identified |
-|---|---|---|---|---|
-| OpenArm v1 | 100 ± 2 g | 350 ± 1 g | 250 g | 100 % of 200 trials |
-| UR5e | 100 ± 1 g | 350 ± 1 g | 250 g | 100 % of 200 trials |
-| Franka FR3 | 100 ± 3 g | 350 ± 3 g | 250 g | 100 % of 200 trials |
+| Arm | Mass difference the robot resolves (acts correctly in 95 %): today / with floor | Acts wrongly at a 10 g difference: today / with floor | Absolute mass error with tare (RMSE, 100 g / 350 g can) |
+|---|---|---|---|
+| OpenArm v1 | 20 g / 75 g | 14 % / 0 % | 11 g / 14 g |
+| UR5e | 100 g / > 250 g | 43 % / 2 % | 60 g / 58 g |
+| Franka FR3 | 20 g / 150 g | 14 % / 0 % | 27 g / 29 g |
 
-- **Same recipe, three arms:** the estimator recovers both masses and the 250 g gap on all of them.
-- **How the arm's own weight is removed:** these results measure the empty gripper at the weigh pose and subtract it (a tare). The robot code currently subtracts model gravity instead. That variant keeps the difference exact but shifts the absolute masses by the arm-model error, which is why the robot compares objects. The tare is a proposed improvement, and both variants are in [docs/cross_embodiment/results.md](docs/cross_embodiment/results.md).
-- **Limits:** it is a simulation, only the OpenArm has run on the real robot, and slow drift between the tare and the load (motor temperature, for example) is not modelled.
+What the simulation says:
+- **Full versus empty is easy on every arm.** With a 250 g difference all three arms act correctly in 100 % of 300 trials with today's rule.
+- **Resolution depends on the sensing.** The OpenArm and the FR3 separate about 20–30 g; the UR5e, whose torques come through high-friction harmonic drives, needs about 100 g.
+- **Today's uncertainty is overconfident.** The standard error comes from the spread over 3 dither cycles, which cannot see offsets that are constant during one weighing. At small differences the robot then sometimes acts and is wrong (panel a). Adding a floor from 5 repeated weighings of one can, which bring-up stage 5 already measures, removes almost all wrong actions; the robot abstains instead (panel b). This is a **proposed change**, not yet in the robot code.
+- **Absolute mass needs a tare.** Subtracting the model gravity leaves an offset of −30 g (OpenArm) to −160 g (UR5e). Weighing the empty gripper first brings the error down to the values in the table. Also proposed, not yet in the robot code.
+- **Limits:** a simulation with assumed error values; only the OpenArm has run on the real robot, and the real numbers should come from bring-up stage 5.
 
 ## Where it matters
 

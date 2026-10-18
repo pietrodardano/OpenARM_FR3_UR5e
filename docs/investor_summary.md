@@ -36,7 +36,7 @@ A working end-to-end system on a real **OpenArm v1** arm with one RGB camera.
 | Claim | Support | Level |
 |---|---|---|
 | The pipeline runs end to end | OpenArm hardware, first system tests, offline test suite | hardware, no benchmarks yet |
-| The estimator is not specific to one arm | MuJoCo, OpenArm / UR5e / Franka FR3: a 250 g gap recovered, heavier can identified in 200 of 200 trials per arm | simulation |
+| The estimator transfers across arms | MuJoCo with an assumed, realistic error budget: full vs. empty resolved on OpenArm, UR5e and Franka FR3 in 300 of 300 trials; about 20–30 g resolution on OpenArm and FR3, about 100 g on UR5e | simulation |
 | The robot abstains when evidence is weak | implemented and unit-tested | software |
 
 ## Market context
@@ -88,7 +88,8 @@ Each case below pairs a documented practice or market with the gap RoboTokens ad
 ## Current limits
 
 - Initial testing only. No published accuracy or throughput benchmarks yet.
-- Absolute mass from the current robot code is offset by arm-model error (gravity model, cable drag, current offsets). The relative comparison is the reliable output. An empty-gripper tare removes the offset in simulation. It is a proposed improvement, not yet in the robot code.
+- Absolute mass from the current robot code is offset by arm-model error (gravity model, cable drag, current offsets). The relative comparison is the reliable output. An empty-gripper tare brings the error to about 11–14 g on the OpenArm in simulation. It is a proposed improvement, not yet in the robot code.
+- The robot's current uncertainty estimate is overconfident: in simulation it sometimes acts on mass differences below about 20 g and gets them wrong. A floor from repeated weighings removes this, at the cost of abstaining more often. Proposed, not yet in the robot code.
 - Narrow scope: two objects, one arm, a fixed weigh pose, a rule-based instruction parser.
 - Cross-embodiment evidence is simulation only. Only the OpenArm has run on hardware.
 
