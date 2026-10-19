@@ -1,4 +1,4 @@
-"""Read-only dashboard server for RoboTokens runs (standalone: touches no operative code).
+"""Read-only dashboard server for OpenARM FR3 UR5e runs (standalone: touches no operative code).
 
 It only READS files: `runs/<time>/report.json`, `runs/detect/{detections,frame}.png`, `configs/robotokens.yaml`
 and the figures in `docs/figures/`. It never opens the camera, the CAN bus or the robot, so it can run

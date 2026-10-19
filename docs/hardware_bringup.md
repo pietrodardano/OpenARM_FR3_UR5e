@@ -25,21 +25,21 @@ If `check` reports joints outside their limits, the motor zero is off. Hang the 
 
 | # | Command | Pass when |
 |---|---|---|
-| 1 | `uv run robotokens check` | All 7 joints and the gripper answer, joints are within limits, no status ≥ 0x8, and the TCP looks plausible. Nothing moves. |
-| 2 | `uv run robotokens zero` | The arm enables at its current pose without a jump, then returns to rest and disables. |
-| 3 | `uv run robotokens grip` | It closes on an empty can and on a full can, holds both, and does not crush the empty one. The jaw width it reports is about the can diameter. |
-| 4 | `uv run robotokens run --objects manual --dry-path` | The arm goes home, then above and to each pre-grasp pose, above both bins, and to the handover pose, without grasping. Watch the twin: green (commanded) and yellow (measured) should overlap. |
-| 5 | `uv run robotokens weigh --labels full empty --n 5` | The two masses separate clearly (z ≥ 3), and the spread over 5 runs is well below their difference. Record both numbers. |
-| 6 | `uv run robotokens detect` | Measure the positions with a ruler or by touching each object with the TCP (`check` prints the TCP). The error must be within about ±1 cm. Do this with the nominal pose, then again after `calib touch`. |
-| 7 | `uv run robotokens run --prompt "put the lighter can in the left bin"` | Both objects end up in the correct bins. `runs/<time>/report.json` has the masses. |
-| 8 | `uv run robotokens run --prompt "give me the heavy can"` | It releases only after you take the can. If nobody takes it, after `task.contact.timeout_s` it puts the can in its bin. |
+| 1 | `uv run openarm-fr3-ur5e check` | All 7 joints and the gripper answer, joints are within limits, no status ≥ 0x8, and the TCP looks plausible. Nothing moves. |
+| 2 | `uv run openarm-fr3-ur5e zero` | The arm enables at its current pose without a jump, then returns to rest and disables. |
+| 3 | `uv run openarm-fr3-ur5e grip` | It closes on an empty can and on a full can, holds both, and does not crush the empty one. The jaw width it reports is about the can diameter. |
+| 4 | `uv run openarm-fr3-ur5e run --objects manual --dry-path` | The arm goes home, then above and to each pre-grasp pose, above both bins, and to the handover pose, without grasping. Watch the twin: green (commanded) and yellow (measured) should overlap. |
+| 5 | `uv run openarm-fr3-ur5e weigh --labels full empty --n 5` | The two masses separate clearly (z ≥ 3), and the spread over 5 runs is well below their difference. Record both numbers. |
+| 6 | `uv run openarm-fr3-ur5e detect` | Measure the positions with a ruler or by touching each object with the TCP (`check` prints the TCP). The error must be within about ±1 cm. Do this with the nominal pose, then again after `calib touch`. |
+| 7 | `uv run openarm-fr3-ur5e run --prompt "put the lighter can in the left bin"` | Both objects end up in the correct bins. `runs/<time>/report.json` has the masses. |
+| 8 | `uv run openarm-fr3-ur5e run --prompt "give me the heavy can"` | It releases only after you take the can. If nobody takes it, after `task.contact.timeout_s` it puts the can in its bin. |
 
 For stage 8, try the timeout path once: let the timeout run out without taking the can.
 
 ## Camera calibration
 
 - **Intrinsics only.** `configs/camera_intrinsics.yaml` was measured (reprojection error 0.17 px). The camera pose comes from the nominal mount in `workcell.camera`. Expect errors of a few cm.
-- **Intrinsics + touch.** Run `uv run robotokens calib touch`, which never commands motion:
+- **Intrinsics + touch.** Run `uv run openarm-fr3-ur5e calib touch`, which never commands motion:
   1. Close the gripper.
   2. Move the arm by hand to 12–20 points at 2–3 heights, pressing Enter at each.
   3. Click the fingertip in each frame.

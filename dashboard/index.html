@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RoboTokens dashboard</title>
+  <title>OpenARM FR3 UR5e dashboard</title>
 <style>
   :root {
     --bg:#0b0f17; --card:#121826; --card2:#171f30; --ink:#e6ebf5; --muted:#8b96ab; --line:#232c3f;
@@ -73,8 +73,7 @@
 <body>
 <div id="demo">DEMO DATA: synthetic runs for previewing this dashboard, not experiment results</div>
 <header>
-  <div class="logo"><img src="/figures/logo.png" alt="RoboTokens" onerror="this.parentNode.style.display='none'"></div>
-  <div><h1>RoboTokens dashboard</h1><div class="sub">Vision is not enough: read-only view of vision, twin and physical estimates</div></div>
+  <div><h1>OpenARM FR3 UR5e dashboard</h1><div class="sub">Read-only view of vision, the digital twin, and physical estimates</div></div>
   <div class="right">
     <label class="follow"><input type="checkbox" id="follow" checked> follow latest run</label>
     <span><span class="dot" id="live"></span><span id="liveText">connecting</span></span>
@@ -102,7 +101,7 @@
   <section class="card c6">
     <h2>Camera <span class="hint" id="camAge"></span></h2>
     <div class="tabs" id="camTabs"></div>
-    <div class="cam" id="cam">waiting for a saved detection (run <code>robotokens detect</code>)</div>
+    <div class="cam" id="cam">waiting for a saved detection (run <code>openarm-fr3-ur5e detect</code>)</div>
     <div class="note">Last saved detection image from <code>runs/detect/</code>. It is a snapshot, not live video: the dashboard never opens the camera.</div>
   </section>
 

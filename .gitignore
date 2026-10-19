@@ -18,7 +18,6 @@ runs/
 outputs/
 
 # Local raw demonstration video (exceeds repository hosting size limit).
-docs/figures/RoboTokens_Can.MOV
 
 # Synthetic dashboard demo data.
 dashboard/demo_data/

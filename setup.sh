@@ -50,4 +50,4 @@ for name, check in [("cv2", lambda m: hasattr(m.aruco, "CharucoDetector")),
     except Exception as e:  # noqa: BLE001
         print(f"--    {name}: {e.__class__.__name__}")
 EOF
-echo "Done. Try: uv run pytest   |   uv run robotokens --help"
+echo "Done. Try: uv run pytest   |   uv run openarm-fr3-ur5e --help"

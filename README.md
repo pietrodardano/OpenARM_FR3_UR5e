@@ -1,28 +1,12 @@
-<p align="center">
-  <img src="docs/figures/banner.png" width="100%" alt="OpenARM FR3 UR5e: contact-aware, cross-embodiment robot manipulation">
-</p>
+# OpenARM FR3 UR5e
 
-<h1 align="center">OpenARM FR3 UR5e</h1>
-
-<p align="center"><strong>Contact-aware cross-embodiment manipulation with vision and joint-torque estimation.</strong></p>
-
-<p align="center">
-  <a href="#what-it-is">What it is</a> ·
-  <a href="#status">Status</a> ·
-  <a href="#quickstart">Quickstart</a> ·
-  <a href="#contributing">Contributing</a>
-</p>
-
-<p align="center">
-  <img src="docs/figures/exploration.gif" width="100%" alt="OpenArm, UR5e, and Franka FR3 simulation lifting two cans to estimate their relative mass">
-  <br><em>Cross-embodiment simulation: OpenArm, UR5e, and Franka FR3 estimate the relative mass of visually similar objects from their joint torques.</em>
-</p>
+**Contact-aware cross-embodiment manipulation with vision and joint-torque estimation.**
 
 ## What it is
 
 OpenARM FR3 UR5e is an open reference project for **vision-guided manipulation that uses interaction as perception**. A camera can identify and localize an object, but it cannot directly observe whether that object is heavy, empty, compliant, or being held by a person. This project couples open-vocabulary vision with joint-torque signals to estimate payload changes and detect sustained contact.
 
-The repository provides an approachable starting point for cross-embodiment experiments spanning **OpenArm**, **Universal Robots UR5e**, and **Franka FR3** models. Its longer-term target is bimanual, contact-aware behavior: seeing objects, testing physical hypotheses through interaction, and acting only when the evidence is sufficient.
+The repository provides an approachable starting point for cross-embodiment experiments spanning **OpenArm**, **Universal Robots UR5e**, and **Franka FR3** models. Its longer-term target is bimanual, contact-aware behavior: seeing objects, testing physical hypotheses through interaction, and acting only when the evidence is sufficient. It is a research and engineering reference, not a ready-to-deploy robot-control product.
 
 The [OpenARM platform](https://docs.anvil.bot/hardware/openarm) is an open-source bimanual manipulator designed for research and development, with seven degrees of freedom per arm. This repository currently uses its OpenArm v1 model and hardware interface as the initial integration point.
 

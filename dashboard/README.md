@@ -1,4 +1,4 @@
-# RoboTokens dashboard
+# OpenARM FR3 UR5e dashboard
 
 A read-only view of what the robot saw, estimated and decided. It is standalone: it does not import or change any code in `src/`, and it never opens the camera, the CAN bus or the robot, so it is safe to run beside a live experiment.
 
@@ -17,7 +17,7 @@ It needs only `pyyaml` (already in the project environment). The page polls the 
 | Run status | `runs/<time>/report.json` | outcome, instruction, mode, heavier object, handover result, error |
 | Camera | `runs/detect/detections.png`, `frame.png` | the last saved detection image, not live video |
 | Digital twin (MuJoCo) | the report + `twin3d.py` | the project's own workcell model (`build_scene`, imported read-only) with each can or box placed at the position vision found; band color shows heavy/light once weighed; rendered on demand and cached in `dashboard/.cache/` |
-| Workcell twin (top view) | `configs/robotokens.yaml` + the report | table, bins, vision workspace, weigh pose, objects at their believed positions, where each went |
+| Workcell twin (top view) | the configured workcell + the report | table, bins, vision workspace, weigh pose, objects at their believed positions, where each went |
 | Physical estimate | report beliefs | mass ± standard error per object, with the per-cycle estimates |
 | Decision | report comparison | `z = Δm / SE` against the `min_z` threshold, conclusive or not |
 | Phases | report phase log | what the state machine did |
@@ -51,4 +51,4 @@ It needs only `pyyaml` (already in the project environment). The page polls the 
 - **Reports appear when a run finishes.** `save_report` writes `report.json` at the end, so the dashboard cannot show a run in progress. Live joint states and the live camera would need a change on the robot side, which this dashboard deliberately does not make.
 - **The MuJoCo panel is a rebuild, not a live mirror.** It shows the scene as detected at the start of the run, with the arm at the home pose. It needs `mujoco` and the OpenArm model (`./setup.sh`); on a machine with no display, set `MUJOCO_GL=egl` or `osmesa`. It renders in a subprocess, so a GL failure only blanks that panel (the reason is written to `dashboard/.cache/twin/last_error.txt`).
 - **The top-view map** is drawn from the config and the report, not from MuJoCo.
-- **Camera panel:** `robotokens detect` writes `runs/detect/detections.png`. `run` does not currently save its frames, so the panel shows the last `detect` call.
+- **Camera panel:** `openarm-fr3-ur5e detect` writes `runs/detect/detections.png`. `run` does not currently save its frames, so the panel shows the last `detect` call.
