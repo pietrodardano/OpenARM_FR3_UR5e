@@ -5,12 +5,10 @@
 #   ./setup.sh --no-hw     # skip the openarm_can build (laptop without the robot)
 #
 # System prerequisites (Ubuntu 24.04), once:
-#   sudo apt install git cmake g++ libcli11-dev can-utils     # libcli11-dev: openarm_can C++ build
+#   sudo apt install git git-lfs cmake g++ libcli11-dev can-utils  # libcli11-dev: openarm_can C++ build
 #   curl -LsSf https://astral.sh/uv/install.sh | sh
 set -euo pipefail
 cd "$(dirname "$0")"
-
-OPENARM_MUJOCO_REV=36d4a44   # enactic/openarm_mujoco commit validated on the real robot
 
 sync_args=()
 if [[ "${1:-}" == "--no-hw" ]]; then
@@ -22,11 +20,16 @@ elif ! dpkg -s libcli11-dev >/dev/null 2>&1; then
   exit 1
 fi
 
-# 1) Official OpenArm MuJoCo model (MJCF + meshes): kinematics, IK, gravity, twin.
-if [[ ! -e third_party/openarm_mujoco/.git ]]; then
-  git clone https://github.com/enactic/openarm_mujoco.git third_party/openarm_mujoco
+# 1) Runtime MuJoCo assets are versioned through Git LFS, not a full vendored source checkout.
+if ! command -v git-lfs >/dev/null 2>&1; then
+  echo "ERROR: git-lfs is required for third_party model meshes. Install it, then run: git lfs pull" >&2
+  exit 1
 fi
-git -C third_party/openarm_mujoco checkout --quiet "$OPENARM_MUJOCO_REV"
+git lfs pull --include="third_party/**"
+if [[ ! -s third_party/openarm_mujoco/v1/openarm_bimanual.xml ]]; then
+  echo "ERROR: missing OpenArm model assets. Run: git lfs pull" >&2
+  exit 1
+fi
 
 # 2) Python environment.
 uv sync "${sync_args[@]}"

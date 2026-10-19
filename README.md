@@ -74,6 +74,8 @@ The cross-embodiment study resolves a 250 g full-versus-empty-can difference on 
 The default development path needs no robot, CAN interface, GPU, or vision weights.
 
 ```bash
+git lfs install
+git lfs pull
 uv sync --no-default-groups --group dev
 uv run --no-default-groups --group dev pytest
 uv run --no-default-groups --group dev openarm-fr3-ur5e run --fake \

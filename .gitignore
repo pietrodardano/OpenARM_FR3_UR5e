@@ -9,8 +9,8 @@ dist/
 .idea/
 .DS_Store
 
-# Cloned by setup.sh (official OpenArm model).
-third_party/
+# Local caches for third-party model tooling. Runtime model assets are tracked with Git LFS.
+third_party/.cache/
 # GroundingDINO / SAM2 checkpoints (see README).
 weights/
 # Run reports and saved frames.
