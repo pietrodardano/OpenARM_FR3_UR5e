@@ -1,0 +1,33 @@
+name: Research or feature proposal
+description: Propose a capability, embodiment adapter, experiment, benchmark, or documentation improvement.
+title: "[Proposal]: "
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Proposal category
+      options: [Embodiment adapter, Bimanual control, Contact-aware skill, Vision, Simulation, Benchmark, Documentation, Other]
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and proposed approach
+      description: Explain the user/research need and the intended design.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Validation plan
+      description: Specify expected tests, simulation evaluation, and any physical-hardware validation. Clearly separate assumptions from measurements.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Hardware and safety impact
+      description: Identify motion, torque, contact, or integration risks; write "none" if not applicable.
+    validations:
+      required: true

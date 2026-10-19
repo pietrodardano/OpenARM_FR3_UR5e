@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "OpenARM FR3 UR5e"
+type: software
+version: 0.2.0
+date-released: 2026-10-19
+repository-code: "https://github.com/pietrodardano/OpenARM_FR3_UR5e"
+license: Apache-2.0
+abstract: "Contact-aware cross-embodiment manipulation with vision and joint-torque estimation."
+authors:
+  - family-names: Dardano
+    given-names: Pietro

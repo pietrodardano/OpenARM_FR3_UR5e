@@ -1,0 +1,25 @@
+name: Offline tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install offline test environment
+        run: uv sync --no-default-groups --group dev
+      - name: Run offline tests
+        run: uv run --no-default-groups --group dev pytest

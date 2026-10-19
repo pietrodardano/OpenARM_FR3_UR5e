@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "robotokens"
 version = "0.2.0"
-description = "Vision finds look-alike objects; OpenArm joint torques tell heavy from light"
+description = "Contact-aware cross-embodiment manipulation with vision and joint-torque estimation"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.12,<3.13"
@@ -70,8 +70,8 @@ sam-2 = ["setuptools", { requirement = "torch", match-runtime = true }]
 sam-2 = { SAM2_BUILD_CUDA = "0" }  # optional CUDA post-processing extension; no nvcc here
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu128" }
-torchvision = { index = "pytorch-cu128" }
+torch = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux' or sys_platform == 'win32'" }]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"

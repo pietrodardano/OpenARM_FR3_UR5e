@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible problem in code, documentation, simulation, or hardware integration.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not include credentials or sensitive logs. Report suspected security or robot-safety vulnerabilities privately via SECURITY.md."
+  - type: dropdown
+    id: evidence-tier
+    attributes:
+      label: Evidence tier
+      options: [Offline test, Simulation, Physical hardware]
+    validations:
+      required: true
+  - type: dropdown
+    id: embodiment
+    attributes:
+      label: Embodiment
+      multiple: true
+      options: [OpenArm, UR5e, Franka FR3, Other, Not applicable]
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include commands, configuration, and a concise expected-versus-actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, commit/version, and simulator or hardware details.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety impact
+      description: State whether this involves motion, torque, contact, or CAN/hardware behavior.

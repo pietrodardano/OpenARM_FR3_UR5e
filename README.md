@@ -1,240 +1,107 @@
 <p align="center">
-  <img src="docs/figures/banner.png" width="100%" alt="RoboTokens logo (physical-sensing layer). Vision is not enough. Estimating physical properties for robust robot manipulation">
+  <img src="docs/figures/banner.png" width="100%" alt="OpenARM FR3 UR5e: contact-aware, cross-embodiment robot manipulation">
+</p>
+
+<h1 align="center">OpenARM FR3 UR5e</h1>
+
+<p align="center"><strong>Contact-aware cross-embodiment manipulation with vision and joint-torque estimation.</strong></p>
+
+<p align="center">
+  <a href="#what-it-is">What it is</a> ·
+  <a href="#status">Status</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#contributing">Contributing</a>
 </p>
 
 <p align="center">
-  <a href="#the-claim">Claim</a> ·
-  <a href="#how-it-works">How it works</a> ·
-  <a href="#evidence">Evidence</a> ·
-  <a href="#where-it-matters">Business</a> ·
-  <a href="#status-and-roadmap">Status</a> ·
-  <a href="#navigate-the-project">Navigate</a> ·
-  <a href="#getting-started">Get started</a>
+  <img src="docs/figures/exploration.gif" width="100%" alt="OpenArm, UR5e, and Franka FR3 simulation lifting two cans to estimate their relative mass">
+  <br><em>Cross-embodiment simulation: OpenArm, UR5e, and Franka FR3 estimate the relative mass of visually similar objects from their joint torques.</em>
 </p>
 
-<p align="center">
-  <img src="docs/figures/exploration.gif" width="100%" alt="Animation: OpenArm, UR5e and Franka FR3 each lift two look-alike cans, wiggle their joints to weigh them, and put them back">
-  <br><em>Interactive perception in simulation, 2x speed: three different arms lift two visually identical cans and estimate their mass from joint torques. The masses shown are simulated estimates, not hardware data.</em>
-</p>
+## What it is
 
-## The claim
+OpenARM FR3 UR5e is an open reference project for **vision-guided manipulation that uses interaction as perception**. A camera can identify and localize an object, but it cannot directly observe whether that object is heavy, empty, compliant, or being held by a person. This project couples open-vocabulary vision with joint-torque signals to estimate payload changes and detect sustained contact.
 
-**Problem.** Camera-based perception recovers geometry, appearance and pose. It does not observe **physical properties** such as mass. Objects that are visually indistinguishable but physically different (a full and an empty can) are therefore ambiguous to any vision-only system, and manipulation decisions that depend on mass cannot be made reliably from images.
+The repository provides an approachable starting point for cross-embodiment experiments spanning **OpenArm**, **Universal Robots UR5e**, and **Franka FR3** models. Its longer-term target is bimanual, contact-aware behavior: seeing objects, testing physical hypotheses through interaction, and acting only when the evidence is sufficient.
 
-**Hypothesis.** The arm is itself a sensor. A payload at the tool point produces a predictable change in joint torques, which the actuators already report. Lifting an object and reading the joint torques (*interactive perception*) gives a mass estimate with a quantified uncertainty, with no added hardware.
-
-**Method.**
-1. Open-vocabulary vision (GroundingDINO + SAM2) localises the objects named in a free-text instruction.
-2. The arm lifts each object and estimates its mass from joint torques (dithered least squares, friction cancelled by averaging over whole cycles). The result is a belief: mass ± standard error.
-3. A statistical test on the mass difference (`z = Δm / SE ≥ 3`) decides. If the evidence is insufficient, the robot re-measures, and if it is still insufficient it abstains.
-4. The decision drives the task: sorting by weight, or a handover released only when contact is *felt*.
-
-**Evidence.**
-
-| Claim | Support | Level |
-|---|---|---|
-| Vision, weighing, comparison, sorting and handover run end to end | OpenArm v1 hardware, first system tests, offline test suite | hardware, no benchmarks yet |
-| The estimator transfers across arms, with sensing-dependent resolution | MuJoCo with an assumed error budget: full vs. empty (250 g) resolved on all three arms in 300 / 300 trials; about 20–30 g resolution on OpenArm and FR3, about 100 g on UR5e ([Evidence](#evidence)) | simulation |
-| The robot abstains instead of guessing when `z < 3` | implemented and unit-tested ([docs/requirements.md](docs/requirements.md), FR4) | software |
-
-**Not yet shown.** Accuracy and repeatability on hardware across object types, more than two objects, and other arms on real hardware. See [Status and roadmap](#status-and-roadmap).
-
-Business view: [docs/investor_summary.md](docs/investor_summary.md).
-
-## Where vision-only perception fails
-
-| Situation | What vision observes | What the task requires |
-|---|---|---|
-| Sort full vs. empty cans | two identical cans | which one is heavier |
-| Lift something unknown | a shape | how hard to grip and how much effort to use |
-| Hand an object to a person | a hand near the object | the moment the person *actually* holds it |
-| Ambiguous scene (look-alikes, glare, occlusion) | a guess | a second, independent check |
-
-## How it works
+The [OpenARM platform](https://docs.anvil.bot/hardware/openarm) is an open-source bimanual manipulator designed for research and development, with seven degrees of freedom per arm. This repository currently uses its OpenArm v1 model and hardware interface as the initial integration point.
 
 ```mermaid
 flowchart LR
-    P["Text instruction<br/>'put the lighter can in the left bin'"] --> D
-    D["See<br/>GroundingDINO + SAM2<br/>find the 2 objects"] --> W
-    W["Weigh<br/>lift each object,<br/>mass from joint torques,<br/>keep a belief: mass ± SE"] --> C
-    C{"Compare<br/>z = Δm / SE ≥ 3 ?"}
-    C -- "yes" --> M{"mode"}
-    C -- "no" --> R["Re-measure the held object<br/>and combine the estimates"]
-    R --> C2{"conclusive now?"}
-    C2 -- "yes" --> M
-    C2 -- "no" --> H["Put it back, go home,<br/>do not guess"]
-    M -- "sort" --> S["Heavy and light object<br/>into their bins"]
-    M -- "handover" --> O["Carry to the person,<br/>open the gripper only when<br/>the hand is felt taking it"]
+    I["Instruction or task"] --> V["Vision\nLocate objects"]
+    V --> A["Interact\nGrasp, lift, or offer"]
+    A --> T["Torque signals\nPayload or contact evidence"]
+    T --> D{"Evidence sufficient?"}
+    D -- Yes --> X["Act\nSort or hand over"]
+    D -- No --> R["Re-measure or abstain"]
 ```
 
-1. **See.** An RGB camera with **GroundingDINO + SAM2** finds the two objects named in the prompt. No retraining is needed per object.
-2. **Weigh.** The arm lifts each object in turn, estimates its mass from joint torques, keeps it as a belief (mass ± standard error), and puts the object back.
-3. **Decide.** It compares the two masses statistically, measures again if the result is not conclusive, and refuses to guess if it is still unclear.
-4. **Act.** It sorts the objects into bins by weight, or hands one to a person and opens the gripper only when it feels them take it.
-5. **Show.** A MuJoCo twin follows the real robot. It only reads the robot's state and never commands it.
+## What you can explore
 
-### The weighing recipe
+- **Torque-based payload estimation** — estimate a lifted object's relative mass from joint-torque residuals using model gravity and dithered measurements.
+- **Contact-aware handover** — release only after a sustained torque change indicates that a recipient has taken the object.
+- **Open-vocabulary object localization** — GroundingDINO and SAM2 locate prompted objects for the physical interaction loop.
+- **Reproducible cross-embodiment study** — compare the same estimator over OpenArm v1, UR5e, and Franka FR3 MuJoCo models.
+- **Safety-oriented task sequencing** — limit and rate-check motion, latch faults, and abstain rather than make an uncertain mass decision.
 
-A mass `m` at the tool point adds `J_z(q) · m · g` to the joint torques, where `J_z` is the vertical row of the tool-point Jacobian. At the weigh pose that is about 1 N·m per 300 g on the shoulder and elbow.
+## Status
 
-```mermaid
-flowchart LR
-    A["Dither the load-bearing joints<br/>with a small sine (1°)"] --> B["Average torques over<br/>whole cycles<br/>(friction flips sign and cancels)"]
-    B --> C["Subtract the arm's own<br/>gravity torques<br/>(from the model)"]
-    C --> D["Least squares:<br/>τ_res ≈ J_z · m · g"]
-    D --> E["mass ± SE<br/>from cycle-to-cycle spread"]
-```
+The project is intentionally explicit about evidence levels. Please preserve these distinctions in issues, pull requests, demos, and downstream work.
 
-The absolute value is rough (model mass errors, cable drag, current offsets). Both objects are measured the same way at the same pose, so the **difference** is reliable, and the system acts on the difference.
-
-### Safety first
-
-Safety was ported unchanged from the hardware-validated code (SR1 to SR6 in [docs/requirements.md](docs/requirements.md)):
-- Every target is clipped to the joint limits and rate-limited inside the 250 Hz servo loop.
-- A motor error, lost communication, an unhealthy bus or a large tracking error latches a fault and freezes the arm.
-- Every Cartesian line is checked for reachability and collisions before the arm moves.
-- On Ctrl+C or any exception, a held object is put back, the arm parks and the motors are disabled.
-
-## Evidence
-
-**How well does torque weighing work, and on which arms?** We tested it in simulation, without changing any robot code. [docs/cross_embodiment/simulate.py](docs/cross_embodiment/simulate.py) loads three real arm models (OpenArm v1, UR5e, Franka FR3, from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)) and runs the recipe of [src/robotokens/sensing/payload.py](src/robotokens/sensing/payload.py) on two look-alike cans.
-
-The simulated torques carry an **error budget that does not simply average away**: offset drift and hysteresis per weighing, asymmetric friction, torque ripple with pose repeatability, sensor noise, an unknown grasp position on the can (±8–10 mm) and a 3 % error in the arm's gravity model. Each arm gets values typical of its sensing principle: motor current for the OpenArm, motor current through harmonic drives for the UR5e, link-side torque sensors for the FR3. **These values are assumptions, not measurements**; they are listed in [docs/cross_embodiment/results.md](docs/cross_embodiment/results.md).
-
-<p align="center">
-  <img src="docs/figures/cross_embodiment_scene.png" width="100%" alt="Still from the simulation: OpenArm, UR5e and Franka FR3 each holding a red can at the weigh pose">
-</p>
-
-<p align="center">
-  <img src="docs/figures/cross_embodiment_results.png" width="100%" alt="Decision accuracy versus mass difference, today and with a repeatability floor, and absolute mass error per arm">
-</p>
-
-| Arm | Mass difference the robot resolves (acts correctly in 95 %): today / with floor | Acts wrongly at a 10 g difference: today / with floor | Absolute mass error with tare (RMSE, 100 g / 350 g can) |
-|---|---|---|---|
-| OpenArm v1 | 20 g / 75 g | 14 % / 0 % | 11 g / 14 g |
-| UR5e | 100 g / > 250 g | 43 % / 2 % | 60 g / 58 g |
-| Franka FR3 | 20 g / 150 g | 14 % / 0 % | 27 g / 29 g |
-
-What the simulation says:
-- **Full versus empty is easy on every arm.** With a 250 g difference all three arms act correctly in 100 % of 300 trials with today's rule.
-- **Resolution depends on the sensing.** The OpenArm and the FR3 separate about 20–30 g; the UR5e, whose torques come through high-friction harmonic drives, needs about 100 g.
-- **Today's uncertainty is overconfident.** The standard error comes from the spread over 3 dither cycles, which cannot see offsets that are constant during one weighing. At small differences the robot then sometimes acts and is wrong (panel a). Adding a floor from 5 repeated weighings of one can, which bring-up stage 5 already measures, removes almost all wrong actions; the robot abstains instead (panel b). This is a **proposed change**, not yet in the robot code.
-- **Absolute mass needs a tare.** Subtracting the model gravity leaves an offset of −30 g (OpenArm) to −160 g (UR5e). Weighing the empty gripper first brings the error down to the values in the table. Also proposed, not yet in the robot code.
-- **Limits:** a simulation with assumed error values; only the OpenArm has run on the real robot, and the real numbers should come from bring-up stage 5.
-
-## Where it matters
-
-Physical AI has to deal with physics, and properties such as mass or fill level are latent: they are revealed only by interacting with the object ([interactive perception](https://arxiv.org/pdf/1604.03670)). The cases below are documented practices where a weight or contact check already matters. Sources and the honest gaps are in [docs/investor_summary.md](docs/investor_summary.md).
-
-| Case | Documented practice | What RoboTokens adds |
+| Area | Current evidence | Scope |
 |---|---|---|
-| Warehouse and e-commerce picking | Weight checks used as quality control, with added scales ([pick-by-weight](https://logisticsmatters.co.uk/?p=15449), [Rapyuta](https://www.rapyuta-robotics.com/2025/12/12/pa-amrs-with-weight-inspection-in-piece-picking/)) | The check comes from the arm that grasps, with no extra scale |
-| Laboratory and pharma handling | Gravimetric tare/gross verification ([BellatRx](https://www.packworld.com/home/article/21203392/pharmaceutical-liquid-filling-monobloc-with-dualweight-verification)) | A screening check inside flexible cells; it does not replace a balance |
-| Service and assistive robots | [Assistive robotics](https://www.giiresearch.com/report/vmr2073881-global-assistive-robotics-market-size-share-trends.html) growing with population aging | Handover released on felt contact |
-| Robot learning | VLMs infer physical concepts from appearance ([Gao et al.](https://arxiv.org/abs/2309.02561)) | Measured mass labels with uncertainty (research direction) |
+| OpenArm vision, payload estimation, sorting, and contact-based handover | First system tests plus offline tests | **Single left OpenArm hardware integration** |
+| OpenArm / UR5e / Franka FR3 payload comparison | MuJoCo study with an assumed, documented error budget | **Simulation only** |
+| UR5e or Franka FR3 robot drivers | Not provided | Roadmap |
+| Coordinated bimanual control | Not provided; current driver operates the left OpenArm | Roadmap |
 
-## Status and roadmap
+The simulation study resolves a 250 g full-versus-empty-can difference on all three modelled arms under its stated assumptions. Its torque noise, friction, offset, and grasp-error values are **assumptions, not hardware measurements**. See [the complete results](docs/cross_embodiment/results.md) before citing or extending them.
 
-| Part | State |
-|---|---|
-| Vision (detect two objects, camera calibration) | working on the real robot |
-| Weighing from joint torques, compare, sort, handover | working on the real robot (first system tests) |
-| MuJoCo twin | working |
-| Offline test suite (`uv run pytest`) | passes with no robot, GPU or weights |
-| Cross-embodiment | simulation of the estimator only |
-| Accuracy and repeatability benchmarks | not yet published |
+## Quickstart
 
-**Next:** validate accuracy across object types, add the tare to the robot code, widen from mass to fill level and stiffness, handle more than two objects, replace the rule-based parser with a language model, and port to other arms.
-
-## Navigate the project
-
-| If you want to... | Go to |
-|---|---|
-| Understand the business case | [docs/investor_summary.md](docs/investor_summary.md) |
-| See what the system must do, with IDs | [docs/requirements.md](docs/requirements.md) |
-| Run it on the real robot, stage by stage | [docs/hardware_bringup.md](docs/hardware_bringup.md) |
-| Read the weighing code | [src/robotokens/sensing/payload.py](src/robotokens/sensing/payload.py) |
-| Read the task state machine | [src/robotokens/task/demo.py](src/robotokens/task/demo.py) |
-| See how objects are found | [src/robotokens/vision/](src/robotokens/vision/) |
-| Check the safety layer | [src/robotokens/robot/driver.py](src/robotokens/robot/driver.py), [safety.py](src/robotokens/robot/safety.py) |
-| Watch runs, camera detections and estimates in a browser (read-only) | [dashboard/](dashboard/) (`dashboard/serve.py`) |
-| Reproduce the cross-embodiment study and the animation | [docs/cross_embodiment/](docs/cross_embodiment/) (`simulate.py` for the numbers, `animate.py` for the GIF) |
-| Change any setting | [configs/robotokens.yaml](configs/robotokens.yaml) |
-| Run the tests | [tests/](tests/) (`uv run pytest`) |
-
-## Getting started
-
-### Setup (one `.venv`, no Docker)
+The default test path is offline: it does not need a robot, CAN interface, GPU, or vision weights.
 
 ```bash
-sudo apt install git cmake g++ libcli11-dev can-utils   # once; libcli11-dev builds openarm_can
-curl -LsSf https://astral.sh/uv/install.sh | sh          # once, if uv is missing
-./setup.sh                                               # .venv + official OpenArm model + check
+uv sync --no-default-groups --group dev
+uv run --no-default-groups --group dev pytest
+uv run --no-default-groups --group dev robotokens run --fake --prompt "Sort the two cans: lighter in the left bin"
 ```
 
-`setup.sh` does three things:
-- Clones `enactic/openarm_mujoco` at the commit validated on the robot.
-- Installs everything with `uv sync`: `openarm_can` 1.4.0, torch cu128, GroundingDINO, SAM2.
-- Checks that the model weights are present.
+For the full OpenArm and vision setup, use [the setup script](setup.sh) and follow [hardware bring-up](docs/hardware_bringup.md) stage by stage. Any physical-robot operation requires supervision, an accessible e-stop, and review of the hardware documentation first.
 
-On a laptop without the robot, run `./setup.sh --no-hw` instead.
+## Repository guide
 
-The model weights are not downloaded; they live in `weights/`, which git ignores:
-
-| File | Source |
+| Looking for | Start here |
 |---|---|
-| `GroundingDINO_SwinT_OGC.py` | github.com/IDEA-Research/GroundingDINO `groundingdino/config/` |
-| `groundingdino_swint_ogc.pth` | GroundingDINO release `v0.1.0-alpha` |
-| `sam2.1_hiera_small.pt` (or `_large`) | dl.fbaipublicfiles.com/segment_anything_2/092824/ |
+| Cross-embodiment simulator and results | [docs/cross_embodiment](docs/cross_embodiment) |
+| Payload estimator | [src/robotokens/sensing/payload.py](src/robotokens/sensing/payload.py) |
+| Contact detector | [src/robotokens/sensing/contact.py](src/robotokens/sensing/contact.py) |
+| Task state machine | [src/robotokens/task/demo.py](src/robotokens/task/demo.py) |
+| Vision and calibration | [src/robotokens/vision](src/robotokens/vision) |
+| Motion, limits, and faults | [src/robotokens/robot](src/robotokens/robot) |
+| Test suite | [tests](tests) |
+| Configuration | [configs/robotokens.yaml](configs/robotokens.yaml) |
 
-### Run it
+## Roadmap
 
-```bash
-uv run pytest                                    # offline: no robot, GPU or weights needed
-uv run robotokens run --fake                    # rehearsal, no hardware: default task = hand the heavy can to a person
-uv run robotokens run --fake --prompt "Sort the two cans: lighter in the left bin"   # sorting instead
+Contributions are welcome around:
 
-sudo scripts/can_up.sh                           # real robot (see docs/hardware_bringup.md)
-uv run robotokens check                          # read-only
-uv run robotokens detect                         # where are the objects? (base frame)
-uv run robotokens run                            # default task: weigh both, hand the heavy can to a person
-uv run robotokens run --prompt "put the lighter can in the left bin"   # sorting instead
-```
+1. Validated hardware benchmarks and transparent calibration procedures.
+2. Reusable embodiment adapters for UR5e and Franka FR3.
+3. Coordinated bimanual perception and manipulation with OpenArm.
+4. Contact-aware skills beyond payload comparison, including compliant insertion and handover.
+5. Better simulation-to-hardware evaluation, documentation, and dataset tooling.
 
-`run` shows the MuJoCo twin unless you pass `--no-twin`. Object positions come from vision on the real robot and from `task.manual_objects` with `--fake`. Use `--objects manual` or `--xy "x,y;x,y"` to set them yourself.
+## Contributing
 
-Each run writes `runs/<time>/report.json` with:
-- the parsed intent
-- the beliefs (position, mass ± SE, class)
-- the comparison
-- where each object went
-- the phase log
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request. In particular, label evidence as simulation, offline test, or physical-hardware observation; do not submit unreviewed motion code for use on a real robot; and keep changes reproducible with the offline test suite where possible.
 
-## Reference
+The project follows the [Code of Conduct](CODE_OF_CONDUCT.md), has a [security policy](SECURITY.md), and is released under the [Apache-2.0 License](LICENSE). If this repository supports your work, please cite it using [CITATION.cff](CITATION.cff).
 
-### Code layout
+## Related documentation
 
-```
-configs/robotokens.yaml   every setting, one place (strictly validated)
-src/robotokens/
-  config.py               typed config loader
-  robot/                  bus.py (openarm_can | FakeBus), driver.py (250 Hz servo thread, safety, faults),
-                          model.py (official MJCF + workcell), ik.py (mink), motion.py (checked moveL,
-                          side route), gripper.py (torque-mode grasp), fake.py (payload for --fake)
-  sensing/                payload.py (mass from torques, compare), contact.py (felt handover)
-  task/                   prompt.py (instruction -> intent), belief.py, skills.py, demo.py (state machine)
-  vision/                 camera, calibration (intrinsics + nominal | touch pose), localizer
-                          (GroundingDINO + SAM2), top_face, detector, calib_cli
-  twin/mirror.py          read-only MuJoCo twin
-  cli.py                  `robotokens` command
-docs/                     requirements, hardware bring-up, investor summary,
-                          cross_embodiment/simulate.py (standalone) and figures/
-tests/                    one file per module; IDs from docs/requirements.md
-```
-
-### Coordinate frames
-
-Every pose is in the base frame of the official OpenArm v1 model:
-- +X points forward, +Y left, +Z up.
-- The origin is at `openarm_body_link0`, 0.633 m above the floor.
-- The tabletop is at z = 0.092 m. The code derives this from `workcell.table.top_height_m` and `workcell.arm_mount_height_m`.
+- [OpenARM hardware documentation](https://docs.anvil.bot/hardware/openarm)
+- [Functional and safety requirements](docs/requirements.md)
+- [OpenArm hardware bring-up](docs/hardware_bringup.md)
+- [Dashboard](dashboard/README.md)
+- [Cross-embodiment results](docs/cross_embodiment/results.md)
