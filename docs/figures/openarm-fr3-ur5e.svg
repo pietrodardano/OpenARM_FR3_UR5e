@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 220" role="img" aria-labelledby="title desc">
+  <title id="title">OpenARM FR3 UR5e</title>
+  <desc id="desc">A minimal mark showing three robot arms converging on a contact point.</desc>
+  <defs>
+    <linearGradient id="accent" x1="0" x2="1">
+      <stop stop-color="#2563eb"/>
+      <stop offset=".5" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#16a34a"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="220" rx="28" fill="#0f172a"/>
+  <circle cx="126" cy="110" r="76" fill="none" stroke="url(#accent)" stroke-width="12"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="12">
+    <path d="M67 80 99 104 126 125" stroke="#60a5fa"/>
+    <path d="m127 48 4 55-5 22" stroke="#fbbf24"/>
+    <path d="m183 80-31 25-26 20" stroke="#4ade80"/>
+  </g>
+  <g fill="#e2e8f0" stroke="#0f172a" stroke-width="7">
+    <circle cx="67" cy="80" r="13"/><circle cx="99" cy="104" r="13"/>
+    <circle cx="127" cy="48" r="13"/><circle cx="131" cy="103" r="13"/>
+    <circle cx="183" cy="80" r="13"/><circle cx="152" cy="105" r="13"/>
+    <circle cx="126" cy="125" r="17" fill="#f8fafc"/>
+  </g>
+  <text x="245" y="98" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="47" font-weight="700" letter-spacing="1">OpenARM · FR3 · UR5e</text>
+  <text x="248" y="143" fill="#94a3b8" font-family="Arial, Helvetica, sans-serif" font-size="25" letter-spacing="2">CONTACT-AWARE CROSS-EMBODIMENT</text>
+</svg>
