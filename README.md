@@ -64,7 +64,7 @@ The default test path is offline: it does not need a robot, CAN interface, GPU, 
 ```bash
 uv sync --no-default-groups --group dev
 uv run --no-default-groups --group dev pytest
-uv run --no-default-groups --group dev robotokens run --fake --prompt "Sort the two cans: lighter in the left bin"
+uv run --no-default-groups --group dev openarm-fr3-ur5e run --fake --prompt "Sort the two cans: lighter in the left bin"
 ```
 
 For the full OpenArm and vision setup, use [the setup script](setup.sh) and follow [hardware bring-up](docs/hardware_bringup.md) stage by stage. Any physical-robot operation requires supervision, an accessible e-stop, and review of the hardware documentation first.
@@ -74,13 +74,10 @@ For the full OpenArm and vision setup, use [the setup script](setup.sh) and foll
 | Looking for | Start here |
 |---|---|
 | Cross-embodiment simulator and results | [docs/cross_embodiment](docs/cross_embodiment) |
-| Payload estimator | [src/robotokens/sensing/payload.py](src/robotokens/sensing/payload.py) |
-| Contact detector | [src/robotokens/sensing/contact.py](src/robotokens/sensing/contact.py) |
-| Task state machine | [src/robotokens/task/demo.py](src/robotokens/task/demo.py) |
-| Vision and calibration | [src/robotokens/vision](src/robotokens/vision) |
-| Motion, limits, and faults | [src/robotokens/robot](src/robotokens/robot) |
+| Payload estimation and contact sensing | [src](src) |
+| Vision, calibration, task sequencing, and control | [src](src) |
 | Test suite | [tests](tests) |
-| Configuration | [configs/robotokens.yaml](configs/robotokens.yaml) |
+| Configuration | [configs](configs) |
 
 ## Roadmap
 

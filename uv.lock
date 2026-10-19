@@ -735,6 +735,61 @@ version = "1.4.0"
 source = { git = "https://github.com/enactic/openarm_can.git?subdirectory=python&rev=1.4.0#f340d4b808fb177e1f297af54eb55fd51c6c7c10" }
 
 [[package]]
+name = "openarm-fr3-ur5e"
+version = "0.2.0"
+source = { editable = "." }
+dependencies = [
+    { name = "daqp" },
+    { name = "mink" },
+    { name = "mujoco" },
+    { name = "numpy" },
+    { name = "opencv-contrib-python" },
+    { name = "pyyaml" },
+    { name = "scipy" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+]
+hardware = [
+    { name = "openarm-can" },
+]
+vision = [
+    { name = "groundingdino" },
+    { name = "sam-2" },
+    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "torchvision", version = "0.26.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "torchvision", version = "0.29.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "transformers" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "daqp", specifier = ">=0.6" },
+    { name = "mink", specifier = ">=1.0" },
+    { name = "mujoco", specifier = ">=3.2" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "opencv-contrib-python", specifier = ">=4.9" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "scipy", specifier = ">=1.11" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8" }]
+hardware = [{ name = "openarm-can", git = "https://github.com/enactic/openarm_can.git?subdirectory=python&rev=1.4.0" }]
+vision = [
+    { name = "groundingdino", git = "https://github.com/IDEA-Research/GroundingDINO.git?rev=856dde20aee659246248e20734ef9ba5214f5e44" },
+    { name = "sam-2", git = "https://github.com/facebookresearch/sam2.git?rev=2b90b9f5ceec907a1c18123530e92e794ad901a4" },
+    { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.7" },
+    { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.7", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "torchvision", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=0.22" },
+    { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.22", index = "https://download.pytorch.org/whl/cu128" },
+    { name = "transformers", specifier = "==4.49.*" },
+]
+
+[[package]]
 name = "opencv-contrib-python"
 version = "5.0.0.93"
 source = { registry = "https://pypi.org/simple" }
@@ -966,61 +1021,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ac/c3/e2a2b89f2d3e2179abd6d00ebd70bff6273f37fb3e0cc209f48b39d00cbf/requests-2.34.2.tar.gz", hash = "sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed", size = 142856, upload-time = "2026-05-14T19:25:27.735Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl", hash = "sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0", size = 73075, upload-time = "2026-05-14T19:25:26.443Z" },
-]
-
-[[package]]
-name = "robotokens"
-version = "0.2.0"
-source = { editable = "." }
-dependencies = [
-    { name = "daqp" },
-    { name = "mink" },
-    { name = "mujoco" },
-    { name = "numpy" },
-    { name = "opencv-contrib-python" },
-    { name = "pyyaml" },
-    { name = "scipy" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-]
-hardware = [
-    { name = "openarm-can" },
-]
-vision = [
-    { name = "groundingdino" },
-    { name = "sam-2" },
-    { name = "torch", version = "2.11.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "torch", version = "2.14.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "torchvision", version = "0.26.0+cu128", source = { registry = "https://download.pytorch.org/whl/cu128" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
-    { name = "torchvision", version = "0.29.1", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
-    { name = "transformers" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "daqp", specifier = ">=0.6" },
-    { name = "mink", specifier = ">=1.0" },
-    { name = "mujoco", specifier = ">=3.2" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "opencv-contrib-python", specifier = ">=4.9" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "scipy", specifier = ">=1.11" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=8" }]
-hardware = [{ name = "openarm-can", git = "https://github.com/enactic/openarm_can.git?subdirectory=python&rev=1.4.0" }]
-vision = [
-    { name = "groundingdino", git = "https://github.com/IDEA-Research/GroundingDINO.git?rev=856dde20aee659246248e20734ef9ba5214f5e44" },
-    { name = "sam-2", git = "https://github.com/facebookresearch/sam2.git?rev=2b90b9f5ceec907a1c18123530e92e794ad901a4" },
-    { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=2.7" },
-    { name = "torch", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=2.7", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "torchvision", marker = "sys_platform != 'linux' and sys_platform != 'win32'", specifier = ">=0.22" },
-    { name = "torchvision", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.22", index = "https://download.pytorch.org/whl/cu128" },
-    { name = "transformers", specifier = "==4.49.*" },
 ]
 
 [[package]]
